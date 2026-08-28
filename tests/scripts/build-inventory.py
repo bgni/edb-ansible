@@ -25,8 +25,10 @@ if __name__ == '__main__':
 
     inventory_vars = {}
     for c in docker_inventory.containers:
-        (inventory_name, os) = c['Service'].split('-')
-        container = docker.DockerOSContainer(c['ID'], os)
+        # Not `os`: that would shadow the module, and the EDB_OS lookup below
+        # would then be a method call on a string.
+        (inventory_name, os_name) = c['Service'].split('-')
+        container = docker.DockerOSContainer(c['ID'], os_name)
         inventory_vars["%s_ip" % inventory_name] = container.ip()
 
     templates_dir = str(env.compose_dir)
