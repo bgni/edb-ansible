@@ -1,7 +1,14 @@
 CONTAINER_ENGINE ?= docker
 COMPOSE := $(CONTAINER_ENGINE) compose
 
-ansible-tester-up:
+# The tester installs the collection from the tarball built at the repository
+# root, so rebuild it first. Without this, a re-run after editing a role
+# silently tests the previous build -- the deploy looks fine and the results
+# are meaningless.
+collection-build:
+	$(MAKE) -C ../../.. build
+
+ansible-tester-up: collection-build
 	$(COMPOSE) up ansible-tester --force-recreate --build --abort-on-container-exit --exit-code-from ansible-tester
 
 post-build:

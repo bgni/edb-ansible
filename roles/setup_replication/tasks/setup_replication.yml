@@ -123,8 +123,10 @@
       ansible.builtin.import_tasks: pg_basebackup.yml
     - name: Setup systemd file
       ansible.builtin.import_tasks: pg_setup_systemd.yml
-    - name: Send SSL files based on users input
-      ansible.builtin.import_tasks: pg_ssl_send_files.yml
+    # The SSL files are sent from inside configure_node.yml, after the base
+    # backup has populated PGDATA and before the service starts. Sending them
+    # here left files in the target directory, and pg_basebackup refuses to
+    # clone into a directory that is not empty.
     - name: Configure standby node
       ansible.builtin.import_tasks: configure_node.yml
 
