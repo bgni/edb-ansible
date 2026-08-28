@@ -1,47 +1,40 @@
 #!/usr/bin/env bash
 #
-# Run a cluster lifecycle test against a playbook that lives outside this
-# repository.
+# Cluster lifecycle test for the collection in this working tree.
 #
-#   tests/run-cluster-lifecycle.sh --playbook-root /path/to/private/edb-ansible \
-#                                  --playbook cluster.yml
+#   tests/run-cluster-lifecycle.sh
+#   tests/run-cluster-lifecycle.sh --phase provision,reconfigure --keep
 #
-# The point is to test *your* playbook, not the one in this tree. The checkout
-# you name is mounted read-only into the Ansible runner and nowhere else; the
-# database nodes never see it. Its commit is recorded with the results so a
-# pass can be attributed to an exact revision.
+# Five containers -- four Postgres nodes and a witness that also hosts the
+# pgBackRest repository -- deployed by tests/cases/cluster_lifecycle/playbook.yml
+# using the roles as they exist in this checkout. The collection is rebuilt from
+# the working tree before every run, so what is exercised is your changes, not a
+# published release.
 #
 # Three phases, in order, because each depends on the last:
 #
-#   1. provision    ephemeral nodes, run the playbook, cluster serves queries
-#   2. reconfigure  change the inventory, re-run the same playbook against the
-#                   running cluster, observe the new configuration converge
-#   3. failover     fence the primary, promote a survivor, verify that every
-#                   acknowledged transaction survived
+#   1. provision    clean nodes, run the playbook, cluster serves queries
+#   2. reconfigure  change the synchronous policy and re-run the same playbook
+#                   against the running cluster; observe it converge
+#   3. failover     kill the primary and verify no acknowledged transaction was
+#                   lost
 #
-# Phase 2 is the one that initial deployment cannot substitute for: deploying
-# with the final value proves nothing about applying a change to a cluster that
-# is already running and serving.
+# Phase 2 is the one initial deployment cannot substitute for: deploying
+# straight to the final value proves nothing about applying a change to a
+# cluster that is already running and serving.
 #
-# Phase 3 tests the promotion *procedure* as much as the configuration.
-# ANY 1 guarantees each acknowledged commit reached at least one qualifying
-# standby -- not that any particular survivor has it. So the test verifies the
-# acknowledged set against whichever node is promoted, and a procedure that
-# cannot demonstrate a safe candidate is expected to refuse rather than promote.
+# Phase 3 tests the promotion procedure as much as the configuration. ANY N
+# guarantees each acknowledged commit reached at least N qualifying standbys --
+# not that a particular survivor has it -- so the acknowledged set is checked
+# against whichever node is promoted.
 #
 # Options:
-#   --playbook-root DIR   checkout containing the playbook (required)
-#   --playbook FILE       playbook path within that root (default cluster.yml)
-#   --inventory FILE      inventory template within this case (default the
-#                         generated four-node-plus-witness one)
 #   --engine ENGINE       podman or docker (default: auto)
 #   --postgres-version N  (default 17)
-#   --phase LIST          comma-separated subset, e.g. provision,reconfigure
+#   --phase LIST          comma-separated subset
+#   --preinstalled        use the pre-built package image, no repository needed
 #   --keep                leave the cluster running afterwards
 #
-# Results, including the playbook revision under test, land in
-# tests/cases/cluster_lifecycle/results/.
-
 set -euo pipefail
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -51,36 +44,24 @@ CASE_DIR="${TESTS_DIR}/cases/${CASE_NAME}"
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 note() { printf '\n==> %s\n' "$*"; }
 
-PLAYBOOK_ROOT=""
-PLAYBOOK="cluster.yml"
 ENGINE="${CONTAINER_ENGINE:-}"
 PGVER="${EDB_PG_VERSION:-17}"
 PHASES="provision,reconfigure,failover"
 KEEP=false
+PREINSTALLED=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --playbook-root) PLAYBOOK_ROOT="$2"; shift 2 ;;
-        --playbook) PLAYBOOK="$2"; shift 2 ;;
         --engine) ENGINE="$2"; shift 2 ;;
         --postgres-version) PGVER="$2"; shift 2 ;;
         --phase) PHASES="$2"; shift 2 ;;
         --keep) KEEP=true; shift ;;
+        --preinstalled) PREINSTALLED=true; shift ;;
         -h|--help) sed -n '2,45p' "$0"; exit 0 ;;
         *) die "unknown argument: $1" ;;
     esac
 done
 
-[[ -n "${PLAYBOOK_ROOT}" ]] || die "--playbook-root is required
-
-This harness exists to test a playbook that is not in this repository. Point it
-at your checkout:
-
-  $0 --playbook-root /path/to/private/edb-ansible --playbook cluster.yml"
-
-PLAYBOOK_ROOT="$(cd "${PLAYBOOK_ROOT}" && pwd)" || die "cannot resolve --playbook-root"
-[[ -f "${PLAYBOOK_ROOT}/${PLAYBOOK}" ]] \
-    || die "no ${PLAYBOOK} under ${PLAYBOOK_ROOT}"
 
 if [[ -z "${ENGINE}" ]]; then
     if command -v podman >/dev/null 2>&1; then ENGINE=podman
@@ -89,11 +70,12 @@ if [[ -z "${ENGINE}" ]]; then
 fi
 COMPOSE=("${ENGINE}" compose)
 
-# Record exactly what is under test. A green run against an unknown revision is
-# not evidence of anything.
-PLAYBOOK_REV="$(git -C "${PLAYBOOK_ROOT}" rev-parse HEAD 2>/dev/null || echo 'not-a-git-checkout')"
-PLAYBOOK_DIRTY="$(git -C "${PLAYBOOK_ROOT}" status --porcelain 2>/dev/null | head -c1)"
-[[ -n "${PLAYBOOK_DIRTY}" ]] && PLAYBOOK_REV="${PLAYBOOK_REV}+dirty"
+# Record exactly what is under test. A green run against an unidentified
+# revision is not evidence of anything.
+REPO_ROOT="$(cd "${TESTS_DIR}/.." && pwd)"
+COLLECTION_REV="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || echo unknown)"
+[[ -n "$(git -C "${REPO_ROOT}" status --porcelain 2>/dev/null | head -c1)" ]] \
+    && COLLECTION_REV="${COLLECTION_REV}+dirty"
 
 export CONTAINER_ENGINE="${ENGINE}"
 export EDB_OS=rhel9
@@ -101,19 +83,29 @@ export EDB_PG_VERSION="${PGVER}"
 export EDB_PG_TYPE="${EDB_PG_TYPE:-PG}"
 export EDB_ENABLE_REPO="${EDB_ENABLE_REPO:-false}"
 export ANSIBLE_CORE_VERSION="${ANSIBLE_CORE_VERSION:-2.15}"
-export EXTERNAL_PLAYBOOK_ROOT="${PLAYBOOK_ROOT}"
-export EXTERNAL_PLAYBOOK="${PLAYBOOK}"
 export LIFECYCLE_PHASES="${PHASES}"
+export PREINSTALLED
+if [[ "${PREINSTALLED}" == true ]]; then
+    export RHEL_BASE_IMAGE="${PREINSTALLED_IMAGE:-localhost/edb-ansible/rhel9-pg17:local}"
+fi
 
 RESULTS="${CASE_DIR}/results"
 mkdir -p "${RESULTS}"
 
-note "Playbook under test"
-printf '  root:     %s\n  playbook: %s\n  revision: %s\n' \
-    "${PLAYBOOK_ROOT}" "${PLAYBOOK}" "${PLAYBOOK_REV}"
-printf '{"playbook_root":"%s","playbook":"%s","revision":"%s","postgres_version":"%s","phases":"%s"}\n' \
-    "${PLAYBOOK_ROOT}" "${PLAYBOOK}" "${PLAYBOOK_REV}" "${PGVER}" "${PHASES}" \
-    > "${RESULTS}/under-test.json"
+note "Collection under test"
+printf '  revision: %s\n  postgres: %s\n  phases:   %s\n' \
+    "${COLLECTION_REV}" "${PGVER}" "${PHASES}"
+printf '{"collection_revision":"%s","postgres_version":"%s","phases":"%s"}\n' \
+    "${COLLECTION_REV}" "${PGVER}" "${PHASES}" > "${RESULTS}/under-test.json"
+
+# The tester installs the collection from this tarball, so rebuild it from the
+# working tree or the run silently exercises the previous build.
+note "Building the collection from the working tree"
+command -v ansible-galaxy >/dev/null 2>&1 \
+    || die "ansible-galaxy not found on PATH; install ansible-core"
+sed -E "s/version:.*/version: \"$(head -n1 "${REPO_ROOT}/VERSION")\"/g" \
+    "${REPO_ROOT}/galaxy.template.yml" > "${REPO_ROOT}/galaxy.yml"
+ansible-galaxy collection build --force --output-path "${REPO_ROOT}" "${REPO_ROOT}"
 
 cd "${CASE_DIR}"
 
@@ -154,5 +146,5 @@ else
     teardown
 fi
 
-printf '\nplaybook revision under test: %s\n' "${PLAYBOOK_REV}"
+printf '\ncollection revision under test: %s\n' "${COLLECTION_REV}"
 exit "${RESULT}"

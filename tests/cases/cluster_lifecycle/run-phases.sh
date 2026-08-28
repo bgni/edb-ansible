@@ -1,14 +1,16 @@
 #!/bin/bash -eu
 # Drives the three lifecycle phases against the external playbook.
 #
-# Runs inside the Ansible runner. /playbook is the checkout under test,
-# mounted read-only; /workspace is this repository, which supplies the
-# inventory, the phase variables and the pytest assertions.
+# Runs inside the Ansible runner. /workspace is this repository; the collection
+# is installed from the tarball built from the working tree, so the roles under
+# test are the ones you have changed.
 
 cd /workspace
+# Installs the collection from the tarball the runner script just rebuilt.
+make install-build
 CASE=/workspace/tests/cases/cluster_lifecycle
 INV="${CASE}/inventory.yml"
-PLAYBOOK="/playbook/${EXTERNAL_PLAYBOOK:-cluster.yml}"
+PLAYBOOK="${CASE}/playbook.yml"
 
 mkdir -p /root/.ssh && chmod 0700 /root/.ssh
 cp "${CASE}/.ssh/id_rsa" "${CASE}/.ssh/ssh_config" /root/.ssh/
@@ -29,6 +31,7 @@ run_playbook() {  # $1 = vars file
         --extra-vars "pg_type=${EDB_PG_TYPE}" \
         --extra-vars "pg_version=${EDB_PG_VERSION}" \
         --extra-vars "enable_edb_repo=${EDB_ENABLE_REPO}" \
+        --extra-vars "preinstalled=${PREINSTALLED:-false}" \
         --extra-vars "@$1" \
         "${PLAYBOOK}"
 }

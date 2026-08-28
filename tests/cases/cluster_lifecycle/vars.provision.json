@@ -5,7 +5,16 @@
   "pg_wal": "/opt/pgwal",
   "pg_ssl": false,
   "synchronous_standby_names": "",
-  "synchronous_standby_application_names": ["postgres02"],
+  "synchronous_standby_application_names": [
+    "postgres02"
+  ],
   "synchronous_standby_num_sync": 1,
-  "standby_quorum_type": "ANY"
+  "standby_quorum_type": "ANY",
+  "_comment_pgbackrest": "pgBackRest encrypts its repository by default (repo_cipher_type aes-256-cbc) and refuses to configure without a passphrase. A throwaway value here; a real deployment supplies this from its secret store.",
+  "pgbackrest_package_name": "pgbackrest",
+  "pgbackrest_user": "pgbackrest",
+  "pgbackrest_group": "pgbackrest",
+  "pgbackrest_configuration_file": "/etc/pgbackrest.conf",
+  "pgbackrest_home": "/var/lib/pgbackrest",
+  "repo_cipher_password": "cluster-lifecycle-test-passphrase"
 }

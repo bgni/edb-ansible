@@ -1,8 +1,7 @@
 # Ephemeral nodes for the cluster lifecycle test.
 #
-# The Ansible runner mounts the external playbook checkout read-only at
-# /playbook. The database nodes do not: they get only their own case directory,
-# so nothing under test leaks onto the machines being configured.
+# The runner deploys with the collection built from this working tree, so the
+# roles as you have changed them are what gets exercised.
 
 x-rhel9-node: &rhel9-node
   privileged: true
@@ -48,12 +47,10 @@ services:
     - EDB_ENABLE_REPO=${EDB_ENABLE_REPO:-false}
     - ANSIBLE_CORE_VERSION="${ANSIBLE_CORE_VERSION:-2.15}"
     - CASE_NAME=cluster_lifecycle
-    - EXTERNAL_PLAYBOOK=${EXTERNAL_PLAYBOOK:-cluster.yml}
     - LIFECYCLE_PHASES=${LIFECYCLE_PHASES:-provision,reconfigure,failover}
+    - PREINSTALLED=${PREINSTALLED:-false}
     volumes:
     - ../../..:/workspace:z
-    # The playbook under test: read-only, and only here.
-    - ${EXTERNAL_PLAYBOOK_ROOT:-../../..}:/playbook:ro
     command: "/workspace/tests/cases/cluster_lifecycle/run-phases.sh"
 
   postgres01-rhel9:
@@ -71,3 +68,10 @@ services:
   witness1-rhel9:
     <<: *rhel9-node
     hostname: witness1
+  # The pgBackRest repository needs its own host. Co-locating it on a database
+  # node makes setup_pgbackrestserver give the postgres user pgbackrest as its
+  # *primary* group, after which manage_dbserver cannot chgrp ~/.pgpass back to
+  # postgres and every re-run fails.
+  pgbackrest1-rhel9:
+    <<: *rhel9-node
+    hostname: pgbackrest1
