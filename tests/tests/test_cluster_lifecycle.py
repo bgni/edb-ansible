@@ -1,9 +1,12 @@
 """
-Cluster lifecycle acceptance for an externally supplied playbook.
+Cluster lifecycle acceptance for the collection in this working tree.
 
-Driven by tests/run-cluster-lifecycle.sh. The playbook under test lives outside
-this repository and is mounted read-only into the runner; these are the
-assertions, not the deployment.
+Driven by tests/run-cluster-lifecycle.sh, which deploys one primary, three
+standbys and a repmgr witness with the roles as they exist in this checkout.
+
+Automatic failover is disabled in this deployment, so phase 3 promotes the way
+an operator would: `repmgr standby promote`, then `repmgr standby follow` on
+the survivors.
 
 Three phases, each depending on the one before, selected by `-k`:
 
@@ -17,11 +20,15 @@ Phase 2 is the reason this exists. Deploying once with the final value proves
 nothing about applying a change to a cluster that is already running; that is
 the operation people actually perform, and the one that breaks.
 
-Phase 3 tests the promotion *procedure* as much as the configuration.
-`ANY 1` guarantees that each acknowledged commit reached at least one
-qualifying standby -- not that a particular survivor has it. So the ledger of
-acknowledged transactions is checked against whichever node ends up promoted,
-and a promotion that cannot be shown safe should be refused rather than forced.
+Phase 3 tests the promotion *procedure* as much as the configuration. The
+writer runs concurrently and the primary is SIGKILLed with transactions in
+flight -- a test that finishes its writes and shuts down cleanly proves nothing
+about data loss, because a graceful shutdown flushes everything by definition.
+
+`ANY 1` guarantees each acknowledged commit reached at least one qualifying
+standby, not that a particular survivor has it. The ledger is therefore checked
+against whichever node is promoted, and a survivor missing any acknowledged
+token is a failure of the procedure rather than something to tolerate.
 """
 
 import re
@@ -65,8 +72,13 @@ def psql(host, query, database='postgres', timeout=None):
         return host.run(command)
 
 
-def psql_output(host, query, database='postgres'):
-    r = psql(host, query, database=database)
+def psql_output(host, query, database='postgres', timeout=60):
+    """
+    Always bounded. Under ANY N with no eligible standby connected a commit
+    waits indefinitely, and an unbounded query would hang the suite instead of
+    reporting the topology problem.
+    """
+    r = psql(host, query, database=database, timeout=timeout)
     assert r.rc == 0, 'query %r failed rc=%d: %s' % (
         query, r.rc, r.stderr.strip())
     return r.stdout.strip()
@@ -99,6 +111,73 @@ def all_db_nodes():
     return get_named_hosts('primary') + get_named_hosts('standby')
 
 
+def repmgr_conf(host):
+    """Path to repmgr.conf, matching the role's own variable."""
+    v = load_ansible_vars()
+    return '/etc/repmgr/%s/repmgr-%s.conf' % (
+        get_pg_version(), v.get('pg_instance_name', 'main'))
+
+
+def repmgr(host, args, timeout=120):
+    """Run a repmgr subcommand as the Postgres owner."""
+    with host.sudo(get_pg_owner()):
+        return host.run('timeout %d /usr/pgsql-%s/bin/repmgr -f %s %s'
+                        % (timeout, get_pg_version(), repmgr_conf(host), args))
+
+
+def lsn_value(host, expr):
+    """
+    An LSN as an integer, compared by PostgreSQL rather than as text.
+
+    Sorting LSN strings lexicographically is wrong across a hex digit
+    boundary: '0/9000000' sorts above '0/10000000' but is the smaller
+    position, so a text sort picks the *least* advanced standby -- precisely
+    the wrong node to promote.
+    """
+    r = psql(host, "SELECT (%s - '0/0'::pg_lsn)::numeric::bigint" % expr,
+             timeout=30)
+    if r.rc != 0 or not r.stdout.strip():
+        return -1
+    try:
+        return int(r.stdout.strip())
+    except ValueError:
+        return -1
+
+
+def start_writer(host, prefix, ledger_path='/tmp/acknowledged.txt'):
+    """
+    Start a writer that appends a token to a file only after its commit
+    returned.
+
+    The file is the record of what was *acknowledged*: a token present there
+    was confirmed to a client, so it must survive the failover. A commit that
+    was still in flight when the primary died leaves no token, which is
+    correct -- its outcome is undefined and asserting on it would be wrong.
+    """
+    script = (
+        "i=0; while true; do "
+        "i=$((i+1)); "
+        "if psql -At -h %s -c \"INSERT INTO %s (token) VALUES ('%s-$i')\" "
+        "postgres >/dev/null 2>&1; then echo '%s-'$i >> %s; fi; "
+        "done"
+        % (get_pg_unix_socket_dir(), LEDGER_TABLE, prefix, prefix, ledger_path)
+    )
+    with host.sudo(get_pg_owner()):
+        host.run('rm -f %s' % ledger_path)
+        host.run("nohup sh -c \"%s\" >/dev/null 2>&1 &" % script)
+
+
+def stop_writer(host):
+    with host.sudo():
+        host.run("pkill -f 'INSERT INTO %s' || true" % LEDGER_TABLE)
+
+
+def acknowledged_tokens(host, ledger_path='/tmp/acknowledged.txt'):
+    with host.sudo(get_pg_owner()):
+        r = host.run('cat %s 2>/dev/null || true' % ledger_path)
+    return [t for t in r.stdout.strip().split('\n') if t]
+
+
 def expected_spec():
     """The policy the current phase asked for, from its vars file."""
     v = load_ansible_vars()
@@ -120,6 +199,27 @@ def current_primary():
         if alive(host) and is_primary(host):
             return (name, host)
     return None
+
+
+_START_TIMES = '/tmp/lifecycle_start_times.txt'
+
+
+def _record_start_times():
+    """Persist each node's postmaster start time for a later phase to compare."""
+    lines = []
+    for n, host in all_db_nodes():
+        lines.append('%s=%s' % (n, psql_output(
+            host, 'SELECT pg_postmaster_start_time()')))
+    with open(_START_TIMES, 'w') as f:
+        f.write('\n'.join(lines))
+
+
+def _read_start_times():
+    try:
+        with open(_START_TIMES) as f:
+            return dict(l.split('=', 1) for l in f.read().split('\n') if '=' in l)
+    except OSError:
+        return {}
 
 
 def ensure_ledger(host):
@@ -157,6 +257,9 @@ def test_lifecycle_provision_cluster_accepts_queries():
     for n, host in all_db_nodes():
         assert psql_output(host, 'SELECT 1') == '1', \
             '%s does not answer reads' % n
+
+    # Baseline for the reconfigure phase's restart check.
+    _record_start_times()
 
 
 def test_lifecycle_provision_standbys_stream_under_their_own_names():
@@ -196,6 +299,48 @@ def test_lifecycle_provision_write_reaches_every_standby():
             h, "SELECT count(*) FROM %s WHERE token = 'replicated'"
             % LEDGER_TABLE).stdout.strip() == '1'), \
             '%s never received the committed row' % n
+
+
+def test_lifecycle_provision_repmgr_topology():
+    """
+    repmgr knows the whole cluster: one primary, three standbys, one witness.
+
+    Replication working does not imply repmgr registered it, and the failover
+    phase promotes through repmgr -- so its view has to be right before that
+    is attempted.
+    """
+    _n, primary = current_primary()
+    rows = psql_output(primary, 'SELECT node_name, type FROM repmgr.nodes',
+                       database='repmgr')
+
+    got = {}
+    for line in [l for l in rows.split('\n') if l]:
+        name, node_type = line.split('|')
+        got[name] = node_type
+
+    expected = {'postgres01': 'primary', 'witness1': 'witness'}
+    for n, _h in get_named_hosts('standby'):
+        expected[n] = 'standby'
+
+    assert got == expected, 'repmgr.nodes holds %s, expected %s' % (got, expected)
+
+
+def test_lifecycle_provision_pgbackrest_configured():
+    """
+    The pgBackRest stanza checks out from a database node.
+
+    Only that the archiving path is configured and reachable -- a restore test
+    belongs in its own case, not in a provisioning check.
+    """
+    v = load_ansible_vars()
+    stanza = v.get('pg_instance_name', 'main')
+    _n, primary = current_primary()
+
+    with primary.sudo(get_pg_owner()):
+        r = primary.run('timeout 120 pgbackrest --stanza=%s check' % stanza)
+
+    assert r.rc == 0, 'pgbackrest check failed on the primary: %s' % (
+        (r.stdout + r.stderr).strip())
 
 
 # ---------------------------------------------------------------------------
@@ -248,11 +393,36 @@ def test_lifecycle_reconfigure_running_value_matches_the_file():
 
 
 def test_lifecycle_reconfigure_cluster_stayed_available():
-    """Every node is still serving after the reconfiguration."""
+    """
+    No node restarted during the reconfiguration, and all are serving.
+
+    Querying nodes afterwards only shows they recovered. Comparing
+    pg_postmaster_start_time() against the value recorded at provisioning
+    shows whether they went down at all -- changing synchronous_standby_names
+    is a reload, so a restart here is an availability event nobody asked for.
+
+    The baseline is written by the provision phase; when it is absent (a
+    reconfigure-only run) the restart check is skipped rather than guessed at.
+    """
     for n, host in all_db_nodes():
         assert alive(host), '%s is not answering after reconfiguration' % n
     assert current_primary() is not None, \
         'no writable primary after reconfiguration'
+
+    baseline = _read_start_times()
+    if not baseline:
+        pytest.skip('no provision-phase baseline; run the provision phase first')
+
+    restarted = []
+    for n, host in all_db_nodes():
+        now = psql_output(host, 'SELECT pg_postmaster_start_time()')
+        if n in baseline and baseline[n] != now:
+            restarted.append(n)
+
+    assert not restarted, (
+        'reconfiguration restarted %s. Changing synchronous_standby_names is '
+        'a reload; a restart is an availability event nobody asked for.'
+        % restarted)
 
 
 def test_lifecycle_reconfigure_commit_succeeds_with_one_standby_down():
@@ -282,97 +452,133 @@ def test_lifecycle_reconfigure_commit_succeeds_with_one_standby_down():
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope='module')
-def acknowledged_ledger():
+def failover():
     """
-    Commit a set of rows, recording each token only after the commit returned.
+    Kill the primary while writes are in flight, then promote through repmgr.
 
-    That ordering is the whole contract: a token in this list was acknowledged
-    to the client, so it must survive the failover. Tokens whose commit did not
-    return are deliberately not recorded -- their fate is undefined and
-    asserting on them would be wrong.
+    Three things matter here and each was wrong in an earlier version:
+
+    * The writer runs *concurrently* and is killed mid-stream. A test that
+      finishes its writes and then shuts down cleanly proves nothing about
+      data loss -- a graceful shutdown flushes everything by definition.
+
+    * The primary is killed with SIGKILL, not `systemctl stop`. An abrupt loss
+      is the failure being tested.
+
+    * Promotion goes through `repmgr standby promote`, the manual procedure
+      this deployment actually uses, and the remaining standbys are then made
+      to follow with `repmgr standby follow`. Raw pg_ctl would bypass repmgr,
+      leave its metadata stale and leave the survivors chasing a dead primary,
+      after which the first synchronous write blocks forever.
+
+    Returns the old primary, the promoted node and the acknowledged tokens.
     """
-    name, primary = current_primary()
-    ensure_ledger(primary)
+    old_name, old_host = current_primary()
+    ensure_ledger(old_host)
 
-    acknowledged = []
-    for i in range(10):
-        token = 'ack-%02d' % i
-        r = psql(primary, "INSERT INTO %s (token) VALUES ('%s')"
-                 % (LEDGER_TABLE, token), timeout=60)
-        if r.rc == 0:
-            acknowledged.append(token)
+    start_writer(old_host, 'ack')
+    time.sleep(10)                     # let a meaningful number commit
 
-    assert acknowledged, 'no transaction was acknowledged on %s' % name
-    return {'primary': name, 'tokens': acknowledged}
+    # Abrupt: SIGKILL the postmaster, no clean shutdown, writes in flight.
+    with old_host.sudo():
+        old_host.run('pkill -9 -f "postgres: .*writer" || true')
+        old_host.run('systemctl kill -s SIGKILL %s || true'
+                     % get_pg_service_name())
+        old_host.run('pkill -9 postgres || true')
 
-
-def test_lifecycle_failover_acknowledged_writes_survive(acknowledged_ledger):
-    """
-    Fence the primary, promote a survivor, and require every acknowledged
-    transaction to be present on it.
-
-    ANY 1 says each acknowledged commit reached at least one qualifying
-    standby; it does not say which. So the check is against whichever node is
-    promoted, and if no survivor holds the acknowledged set then promoting it
-    would lose data -- which is a failure of the procedure, and is reported as
-    one rather than being tolerated.
-    """
-    old_name = acknowledged_ledger['primary']
-    tokens = acknowledged_ledger['tokens']
-    old_host = dict(all_db_nodes())[old_name]
-
-    # Fence: stop it and confirm it is unreachable before anything is promoted.
-    old_host.run('systemctl stop %s' % get_pg_service_name())
     assert wait_until(lambda: not alive(old_host), timeout=120), \
-        '%s still answers; promoting now would risk two writable nodes' % old_name
+        '%s still answers after SIGKILL; promoting now would risk two ' \
+        'writable nodes' % old_name
 
-    survivors = [(n, h) for n, h in get_named_hosts('standby')
+    tokens = acknowledged_tokens(old_host)
+    stop_writer(old_host)
+    assert tokens, 'the writer acknowledged nothing before the primary died'
+
+    # Choose the most advanced survivor, compared numerically.
+    survivors = [(n, h) for n, h in all_db_nodes()
                  if n != old_name and alive(h)]
-    assert survivors, 'no surviving standby to promote'
+    assert survivors, 'no surviving node to promote'
 
-    # Choose the most advanced survivor, which is the only defensible choice.
-    def replay_lsn(host):
-        r = psql(host, 'SELECT pg_last_wal_replay_lsn()')
-        return r.stdout.strip() if r.rc == 0 else ''
+    for _n, h in survivors:            # let replay catch up to what was received
+        wait_until(lambda hh=h: lsn_value(hh, 'pg_last_wal_replay_lsn()')
+                   >= lsn_value(hh, 'pg_last_wal_receive_lsn()'), timeout=60)
 
-    survivors.sort(key=lambda nh: replay_lsn(nh[1]), reverse=True)
+    survivors.sort(key=lambda nh: lsn_value(nh[1], 'pg_last_wal_replay_lsn()'),
+                   reverse=True)
     cand_name, cand = survivors[0]
 
-    with cand.sudo(get_pg_owner()):
-        promoted = cand.run('/usr/pgsql-%s/bin/pg_ctl promote -D %s'
-                            % (get_pg_version(), show(cand, 'data_directory')))
-    assert promoted.rc == 0, \
-        '%s could not be promoted: %s' % (cand_name, promoted.stderr.strip())
+    result = repmgr(cand, 'standby promote')
+    assert result.rc == 0, '%s: repmgr standby promote failed: %s' % (
+        cand_name, (result.stdout + result.stderr).strip())
 
     assert wait_until(lambda: is_primary(cand), timeout=PROMOTE_TIMEOUT), \
-        '%s is still in recovery after promotion' % cand_name
+        '%s is still in recovery after repmgr standby promote' % cand_name
 
-    present = psql_output(
-        cand, "SELECT token FROM %s WHERE token LIKE 'ack-%%' ORDER BY token"
-        % LEDGER_TABLE).split('\n')
-    present = [t for t in present if t]
+    # The others must follow the new primary, or ANY 1 has no eligible
+    # standby and the next synchronous commit never returns.
+    followed = []
+    for n, h in survivors[1:]:
+        r = repmgr(h, 'standby follow')
+        if r.rc == 0:
+            followed.append(n)
 
-    missing = sorted(set(tokens) - set(present))
+    return {'old': old_name, 'promoted': (cand_name, cand),
+            'tokens': tokens, 'followed': followed}
+
+
+def test_lifecycle_failover_no_acknowledged_transaction_is_lost(failover):
+    """
+    Every transaction acknowledged before the primary died is present on the
+    promoted node.
+
+    ANY 1 says each acknowledged commit reached at least one qualifying
+    standby; it does not say which. If the promoted survivor is missing any of
+    them, promoting it lost data -- a failure of the promotion procedure, and
+    reported as one rather than tolerated.
+    """
+    cand_name, cand = failover['promoted']
+    tokens = failover['tokens']
+
+    present = set(psql_output(
+        cand, "SELECT token FROM %s WHERE token LIKE 'ack-%%'" % LEDGER_TABLE,
+        timeout=60).split('\n'))
+
+    missing = sorted(set(tokens) - present)
     assert not missing, (
-        'DATA LOSS: %d acknowledged transaction(s) absent from the promoted '
-        'node %s: %s' % (len(missing), cand_name, missing))
+        'DATA LOSS: %d of %d acknowledged transaction(s) absent from the '
+        'promoted node %s. First missing: %s'
+        % (len(missing), len(tokens), cand_name, missing[:5]))
 
 
-def test_lifecycle_failover_exactly_one_writable_node(acknowledged_ledger):
-    """After the failover exactly one node accepts writes."""
+def test_lifecycle_failover_exactly_one_writable_node(failover):
+    """Exactly one node accepts writes after the failover."""
     writable = [n for n, h in all_db_nodes() if alive(h) and is_primary(h)]
     assert len(writable) == 1, \
         'expected one writable node after failover, found %s' % writable
 
 
-def test_lifecycle_failover_new_primary_accepts_writes(acknowledged_ledger):
-    """The promoted node is a usable primary, not merely out of recovery."""
-    found = current_primary()
-    assert found, 'no writable primary after failover'
-    name, host = found
+def test_lifecycle_failover_synchronous_writes_resume(failover):
+    """
+    A synchronous commit succeeds on the new primary once the survivors follow.
 
-    psql_output(host, "INSERT INTO %s (token) VALUES ('post-failover')"
-                % LEDGER_TABLE)
-    assert psql_output(
-        host, "SELECT count(*) FROM %s WHERE token = 'post-failover'"
-        % LEDGER_TABLE) == '1', '%s did not accept a write' % name
+    Bounded deliberately: under ANY 1 with no eligible standby attached this
+    would otherwise wait forever, and a hang is a worse result than a failure.
+    """
+    cand_name, cand = failover['promoted']
+
+    assert failover['followed'], (
+        '%s: no standby followed the new primary, so ANY 1 has no eligible '
+        'candidate and synchronous commits cannot complete' % cand_name)
+
+    streaming = wait_until(
+        lambda: psql(cand, "SELECT count(*) FROM pg_stat_replication "
+                           "WHERE state = 'streaming'",
+                     timeout=30).stdout.strip() not in ('', '0'),
+        timeout=PROMOTE_TIMEOUT)
+    assert streaming, '%s has no streaming standby after the follows' % cand_name
+
+    r = psql(cand, "INSERT INTO %s (token) VALUES ('post-failover')"
+             % LEDGER_TABLE, timeout=60)
+    assert r.rc == 0, (
+        '%s: a synchronous commit did not complete after failover: %s'
+        % (cand_name, (r.stdout + r.stderr).strip()))

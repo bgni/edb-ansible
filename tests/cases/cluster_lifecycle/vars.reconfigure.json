@@ -1,5 +1,5 @@
 {
-  "_comment": "Phase 2 input: the only change is the synchronous policy, widened to all four nodes. Re-running the same playbook with this must converge the running cluster onto ANY 1 (postgres01..04) on every promotion candidate.",
+  "_comment": "Phase 2 input. The only change from provision is the synchronous policy: from '*' to an explicitly named ANY 1 over all four nodes. That is the exact transition being made in production, so it is the one the test performs -- widening an already-named list would not reproduce it.",
   "use_hostname": false,
   "pg_data": "/opt/pgdata",
   "pg_wal": "/opt/pgwal",
