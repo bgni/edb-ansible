@@ -11,5 +11,7 @@
   "pgbackrest_group": "pgbackrest",
   "pgbackrest_configuration_file": "/etc/pgbackrest.conf",
   "pgbackrest_home": "/var/lib/pgbackrest",
-  "repo_cipher_password": "cluster-lifecycle-test-passphrase"
+  "repo_cipher_password": "cluster-lifecycle-test-passphrase",
+  "_comment_failover": "Automatic failover is disabled, matching the deployment. The collection DEFAULTS repmgr_failover to 'automatic', so leaving this unset gives you repmgrd promoting a standby on its own -- which is finding EDB-01, and which was observed here: repmgrd promoted a node before the test's manual promotion ran, and repmgr then refused the second promotion.",
+  "repmgr_failover": "manual"
 }

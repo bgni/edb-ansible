@@ -350,6 +350,33 @@ def test_lifecycle_provision_repmgr_topology():
     assert got == expected, 'repmgr.nodes holds %s, expected %s' % (got, expected)
 
 
+def test_lifecycle_provision_failover_mode_is_as_configured():
+    """
+    repmgr's failover mode on every node matches what the case asked for.
+
+    The collection defaults repmgr_failover to 'automatic'. A deployment that
+    believes it has manual failover, but never sets the variable, gets repmgrd
+    promoting a standby on its own -- with no fencing, which is finding EDB-01.
+
+    Observed here before this assertion existed: repmgrd promoted a node during
+    the failover phase, and the manual promotion that followed was refused with
+    "this replication cluster already has an active primary server".
+    """
+    expected = load_ansible_vars().get('repmgr_failover', 'automatic')
+
+    for n, host in all_db_nodes():
+        conf = host.file(repmgr_conf(host))
+        assert conf.exists, '%s: %s is missing' % (n, repmgr_conf(host))
+
+        match = re.search(r"^failover\s*=\s*'?(\w+)'?", conf.content_string,
+                          re.MULTILINE)
+        assert match, '%s: no failover setting in repmgr.conf' % n
+        assert match.group(1) == expected, (
+            '%s has failover=%s, expected %s. With automatic failover repmgrd '
+            'promotes on its own, without fencing.'
+            % (n, match.group(1), expected))
+
+
 def test_lifecycle_provision_pgbackrest_configured():
     """
     The pgBackRest stanza checks out from a database node.
