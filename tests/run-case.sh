@@ -2,9 +2,16 @@
 #
 # Run one test case without make.
 #
-#   tests/run-case.sh <case> [os]          run a case (os defaults to rhel9)
-#   tests/run-case.sh <case> [os] --clean  tear the case down and exit
-#   tests/run-case.sh --list               list the available cases
+#   tests/run-case.sh <case> [os]              run a case (os defaults to rhel9)
+#   tests/run-case.sh <case> [os] --tests-only  re-run the tests only
+#   tests/run-case.sh <case> [os] --clean       tear the case down and exit
+#   tests/run-case.sh --list                    list the available cases
+#
+# --tests-only reuses a cluster that is already up, skipping the image build,
+# the container start and the Ansible deploy. On the prod_topology case a full
+# run is around fourteen minutes and the tests themselves are about eighty
+# seconds, so this is the difference between a coffee break and a normal edit
+# cycle when iterating on a test. Deploy first with KEEP_CONTAINERS=true.
 #
 # Everything the Makefile targets did, in a single script: build the collection
 # tarball, bring the node containers up, prepare SSH between them, render the
@@ -57,9 +64,11 @@ fi
 shift || true
 
 CLEAN_ONLY=false
+TESTS_ONLY=false
 for arg in "$@"; do
     case "$arg" in
         --clean) CLEAN_ONLY=true ;;
+        --tests-only) TESTS_ONLY=true ;;
         *) die "unknown argument: $arg" ;;
     esac
 done
@@ -94,6 +103,19 @@ teardown() {
 if [[ "${CLEAN_ONLY}" == true ]]; then
     teardown
     exit 0
+fi
+
+if [[ "${TESTS_ONLY}" == true ]]; then
+    [[ -f ./inventory.yml ]] || die \
+        "no inventory.yml in ${CASE_DIR}: --tests-only needs a cluster that is
+already deployed. Run without it first, using KEEP_CONTAINERS=true."
+
+    note "Re-running the tests against the existing cluster"
+    export SKIP_PLAYBOOK=true
+    "${COMPOSE[@]}" up ansible-tester \
+        --force-recreate --abort-on-container-exit \
+        --exit-code-from ansible-tester
+    exit $?
 fi
 
 # The tester installs the collection from this tarball, so it must be rebuilt

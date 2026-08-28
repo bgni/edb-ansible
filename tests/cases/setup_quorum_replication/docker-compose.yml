@@ -23,6 +23,10 @@ services:
     - CASE_NAME=setup_quorum_replication
     - EDB_OS
     - ANSIBLE_CORE_VERSION="${ANSIBLE_CORE_VERSION:-2.13}"
+    # Set by `run-case.sh --tests-only` to re-run pytest against a
+    # cluster that is already deployed.
+    - SKIP_PLAYBOOK=${SKIP_PLAYBOOK:-false}
+    - PYTEST_ARGS=${PYTEST_ARGS:-}
     volumes:
     - ../../..:/workspace
     command: "/workspace/tests/docker/exec-tests.sh"
