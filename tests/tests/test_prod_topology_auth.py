@@ -36,7 +36,6 @@ from test_prod_topology import (
     psql_output,
     show,
 )
-from test_prod_topology_day2 import promoted  # noqa: F401  (pytest fixture)
 
 
 # Where the deployment put the issued certificates, inside the tester
@@ -275,65 +274,3 @@ def test_prod_topology_mtls_password_only_client_is_rejected():
 
     assert result.rc != 0, \
         'a client with no certificate authenticated as %s' % mtls_user()
-
-
-# ---------------------------------------------------------------------------
-# after switching primary
-# ---------------------------------------------------------------------------
-
-def test_prod_topology_mtls_still_authenticates_after_promotion(promoted):  # noqa: F811
-    """
-    The same client certificate authenticates against the promoted primary.
-
-    This is the auth-side equivalent of the promotion-ready durability policy.
-    The map and the HBA rule were applied to every promotion candidate at
-    deploy time, so the new primary already accepts the certificate; a
-    deployment that configured only the old primary would lock out every
-    certificate client at the moment of failover, when reconfiguring is hardest.
-    """
-    name, host, _method = promoted
-
-    base = client_material(host)
-
-    result = psql_with_cert(
-        host, node_ip(name),
-        '%s/client.crt' % base, '%s/client.key' % base, mtls_user())
-
-    assert result.rc == 0, (
-        '%s: certificate authentication failed against the promoted primary: '
-        '%s' % (name, result.stderr.strip()))
-
-    assert result.stdout.strip() == mtls_user(), \
-        '%s: connected as %r, expected %r' % (
-            name, result.stdout.strip(), mtls_user())
-
-
-def test_prod_topology_mtls_can_add_a_user_on_the_promoted_primary(promoted):  # noqa: F811
-    """
-    A new role added on the promoted primary is usable, and the map file is
-    still the Ansible-managed one.
-
-    Proves the promoted node is a fully functional primary for authentication
-    purposes, not merely serving the configuration it inherited.
-    """
-    name, host, _method = promoted
-
-    new_role = '%s_after_failover' % mtls_user()
-
-    psql_output(
-        host,
-        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = "
-        "'%s') THEN CREATE ROLE %s LOGIN; END IF; END $$" % (
-            new_role, new_role))
-
-    assert psql_output(
-        host,
-        "SELECT count(*) FROM pg_roles WHERE rolname = '%s'" % new_role
-    ) == '1', '%s: could not add a role on the promoted primary' % name
-
-    ident_file = show(host, 'ident_file')
-    managed = os.path.join(
-        os.path.dirname(ident_file), managed_ident_filename())
-
-    assert host.file(managed).exists, \
-        '%s: the managed ident file is missing after promotion' % name

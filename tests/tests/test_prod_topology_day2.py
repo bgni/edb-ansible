@@ -11,11 +11,19 @@ moment the inherited `/bin/true` archive command stops being inert and starts
 silently discarding WAL (EDB-18), and the moment a standby needs to have been
 carrying the synchronous policy all along (EDB-03).
 
-Ordering matters and is load-bearing. pytest collects files alphabetically, so
-`test_prod_topology.py` runs before `test_prod_topology_day2.py`, and within
-this file the configuration tests run before the promotion tests. The promotion
-tests deliberately stop the primary and promote a standby, so nothing that
-assumes the original topology may run after them.
+Ordering matters and is load-bearing. pytest collects files alphabetically:
+
+    test_prod_topology.py       the cluster as deployed
+    test_prod_topology_auth.py  mTLS configuration and authentication
+    test_prod_topology_day2.py  this file
+
+and within this file the configuration tests run before the promotion tests.
+
+The promotion fixture stops the primary, so *nothing* that assumes the original
+topology may run after it -- which is why the two post-promotion mTLS tests
+live at the bottom of this module rather than in the auth module. Putting them
+there made the whole auth module run after the promotion, and every test in it
+failed against a stopped node.
 """
 
 import json
@@ -31,6 +39,13 @@ from conftest import (
     get_pg_version,
     get_primary,
     get_standbys,
+)
+from test_prod_topology_auth import (
+    client_material,
+    mtls_user,
+    managed_ident_filename,
+    node_ip,
+    psql_with_cert,
 )
 from test_prod_topology import (
     all_database_nodes,
@@ -511,3 +526,65 @@ def test_finding_edb_07_inventory_is_stale_after_promotion(promoted):
         assert psql(host, 'SELECT 1').rc != 0, (
             '%s is still answering queries; this test assumed it was the '
             'stopped former primary' % name)
+
+
+# ---------------------------------------------------------------------------
+# after switching primary
+# ---------------------------------------------------------------------------
+
+def test_prod_topology_mtls_still_authenticates_after_promotion(promoted):
+    """
+    The same client certificate authenticates against the promoted primary.
+
+    This is the auth-side equivalent of the promotion-ready durability policy.
+    The map and the HBA rule were applied to every promotion candidate at
+    deploy time, so the new primary already accepts the certificate; a
+    deployment that configured only the old primary would lock out every
+    certificate client at the moment of failover, when reconfiguring is hardest.
+    """
+    name, host, _method = promoted
+
+    base = client_material(host)
+
+    result = psql_with_cert(
+        host, node_ip(name),
+        '%s/client.crt' % base, '%s/client.key' % base, mtls_user())
+
+    assert result.rc == 0, (
+        '%s: certificate authentication failed against the promoted primary: '
+        '%s' % (name, result.stderr.strip()))
+
+    assert result.stdout.strip() == mtls_user(), \
+        '%s: connected as %r, expected %r' % (
+            name, result.stdout.strip(), mtls_user())
+
+
+def test_prod_topology_mtls_can_add_a_user_on_the_promoted_primary(promoted):
+    """
+    A new role added on the promoted primary is usable, and the map file is
+    still the Ansible-managed one.
+
+    Proves the promoted node is a fully functional primary for authentication
+    purposes, not merely serving the configuration it inherited.
+    """
+    name, host, _method = promoted
+
+    new_role = '%s_after_failover' % mtls_user()
+
+    psql_output(
+        host,
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = "
+        "'%s') THEN CREATE ROLE %s LOGIN; END IF; END $$" % (
+            new_role, new_role))
+
+    assert psql_output(
+        host,
+        "SELECT count(*) FROM pg_roles WHERE rolname = '%s'" % new_role
+    ) == '1', '%s: could not add a role on the promoted primary' % name
+
+    ident_file = show(host, 'ident_file')
+    managed = os.path.join(
+        os.path.dirname(ident_file), managed_ident_filename())
+
+    assert host.file(managed).exists, \
+        '%s: the managed ident file is missing after promotion' % name
