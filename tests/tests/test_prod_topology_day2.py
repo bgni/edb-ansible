@@ -325,17 +325,26 @@ def test_prod_topology_day2_writes_still_replicate_after_reconfiguration():
 @pytest.fixture(scope='module')
 def promoted():
     """
-    Stop the primary and promote the first standby.
+    Stop the primary and promote the first standby. Returns
+    (name, host, method).
 
-    Module-scoped so the promotion happens once and the tests that follow all
-    observe the same promoted node. Returns (name, host, method).
+    Deliberately idempotent. The fixture is module-scoped, and
+    test_prod_topology_mtls.py imports it to test authentication against the
+    promoted primary -- which gives pytest a second fixture definition and a
+    second invocation. Promoting an already-promoted node fails, so this
+    returns the existing promotion instead of attempting another one.
     """
-    old_primary = get_primary()
     standbys = get_named_hosts('standby')
 
     assert standbys, 'the case deployed no standby to promote'
 
     name, host = standbys[0]
+
+    # Already promoted by an earlier module: nothing to do.
+    if psql(host, 'SELECT pg_is_in_recovery()').stdout.strip() == 'f':
+        return (name, host, 'already-promoted')
+
+    old_primary = get_primary()
 
     # Stop the primary first. Promoting while the old primary is still writable
     # is exactly the split-brain the reviews warn about, and is not something a

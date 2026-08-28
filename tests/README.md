@@ -219,14 +219,80 @@ that file the configuration tests run before the promotion tests. The promotion
 fixture stops the primary, so nothing that assumes the deployed topology may be
 added after it.
 
-### TLS in this case
+### Client-certificate (mTLS) authentication
 
-`pg_ssl` is `false` here. The collection has no ACME/certbot integration, and
-its only built-in certificate path generates a private self-signed CA *inside
-the database* through the EDB `sslutils` extension — which is not the
-ACME-issued chain a certbot deployment assumes. Enabling `pg_ssl` would
-therefore test `sslutils`, not the deployment. The gap is asserted directly
-instead, by `test_finding_tls_02_no_client_certificate_authentication`.
+`tests/tests/test_prod_topology_mtls.py` covers certificate authentication,
+including across a promotion.
+
+`issue_certs.yml` runs on the control node and issues the PKI: one CA, a server
+certificate per database node, a CRL, and two client certificates. That CA
+stands in for the deployment's local ACME server — the collection has no ACME
+integration, so certificates are issued outside it and handed in through the
+`pg_ssl_*_file` variables, which is exactly how a certbot-issued chain reaches
+PostgreSQL. What is under test is the authentication configuration the
+collection applies on top, not the issuer.
+
+The deployment then declares, on **every promotion-capable node**:
+
+```yaml
+pg_ident_maps:
+  - mapname: mtls
+    system_username: prod-topology-client   # the certificate Common Name
+    pg_username: mtls_app                   # the PostgreSQL role
+pg_hba_ip_addresses:
+  - contype: hostssl
+    users: mtls_app
+    method: cert
+    options: "map=mtls clientcert=verify-full"
+```
+
+Two deliberate choices make the tests mean something:
+
+- **The client certificate's Common Name is not the role name.** The identity
+  map is what translates one into the other, so a test where the two were equal
+  would still pass if the map were ignored entirely.
+- **A second certificate from the same CA carries an unmapped CN** and must be
+  *rejected*. Without that, the positive test would pass even if any CA-signed
+  certificate were accepted — which is the difference between mTLS and having
+  turned SSL on.
+
+The tests check that the managed map file exists and is included from
+`pg_ident.conf`, that PostgreSQL actually parsed it
+(`pg_ident_file_mappings` with no error), that the HBA rule carries
+`cert` + `map=` + `clientcert=verify-full` (`pg_hba_file_rules`), that the added
+user authenticates with its certificate and lands in the mapped role, that the
+unmapped certificate and a certificate-less client are both refused — and then,
+**after the promotion**, that the same certificate still authenticates against
+the new primary and that roles can still be added there.
+
+That last check is the auth-side equivalent of the promotion-ready durability
+policy in EDB-03: a deployment that configured only the old primary locks out
+every certificate client at the moment of failover, which is the worst possible
+time to discover it.
+
+### Why the certificates are issued outside the collection
+
+`pg_ssl` is `true` in this case, but the certificates come from
+`issue_certs.yml` rather than from the collection.
+
+Left to itself, `init_dbserver` generates a private self-signed CA *inside the
+database*, through the EDB `sslutils` extension. That works — `sslutils_17` is
+available from PGDG on RHEL 9 — but it produces a CA that exists only on that
+one node, which is no use for client certificates: every node would trust a
+different CA, and nothing outside the database could be issued a certificate at
+all. It is also not the ACME-issued chain a certbot deployment assumes.
+
+So the case issues one CA on the control node and hands the results in through
+`pg_ssl_cert_file`, `pg_ssl_key_file`, `pg_ssl_ca_file` and `pg_ssl_crl_file`.
+Each of `init_dbserver`'s generation steps is guarded by a "does this file
+already exist" check, so supplying the files makes it skip its own generation
+for them.
+
+`pg_ssl_crl_file` is supplied for a specific reason: `init_dbserver` points
+`ssl_crl_file` at `root.crl`, and if that file is not provided it is generated
+from the unrelated sslutils CA. A CRL from a different CA than the one that
+signed the client certificates breaks verification, so the case issues an empty
+CRL from its own CA.
 
 ## Checking the source-review findings
 

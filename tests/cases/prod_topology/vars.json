@@ -13,15 +13,18 @@
   "synchronous_standby_num_sync": 2,
   "standby_quorum_type": "ANY",
 
-  "_comment_ssl": "TLS is off in this case. The collection has no ACME/certbot integration (finding TLS-01), and its only built-in certificate path generates a private self-signed CA inside the database through the EDB sslutils extension (TLS-03), which is not the ACME-issued chain the target deployment assumes. Turning pg_ssl on here would test sslutils, not the deployment. The TLS gap is asserted directly in test_prod_topology.py instead.",
-  "pg_ssl": false,
+  "_comment_tls": "TLS is on, using a CA issued by issue_certs.yml on the control node. That CA stands in for the deployment's local ACME server: the collection has no ACME integration, so certificates are issued outside it and handed in through the pg_ssl_*_file variables, which is how a certbot-issued chain would reach PostgreSQL. tls_dir lives under the case directory, which is mounted into the tester container.",
+  "pg_ssl": true,
+  "tls_dir": "/workspace/tests/cases/prod_topology/certs",
+  "tls_ca_common_name": "prod-topology-test-ca",
+
+  "_comment_mtls": "The client certificate's Common Name is deliberately NOT the PostgreSQL role name. The identity map is what translates one into the other, so a test where they were equal would still pass if the map were ignored entirely.",
+  "tls_client_common_name": "prod-topology-client",
+  "tls_unmapped_common_name": "prod-topology-unmapped",
+  "mtls_pg_user": "mtls_app",
+  "mtls_map_name": "mtls",
 
   "_comment_failover": "repmgr_failover is left at the role default so the deployment test observes the shipped behaviour rather than a corrected one. test_prod_topology.py asserts what the default actually produces (finding EDB-01).",
 
-  "pg_users": [
-    {
-      "name": "test",
-      "pass": "password"
-    }
-  ]
+  "_comment_no_pg_users": "Do NOT define pg_users here. setup_replication creates its replication user by calling manage_dbserver with `include_role` and `vars: pg_users: [repuser]`, and --extra-vars outrank include_role vars. A pg_users key in this file therefore replaces that list everywhere, repuser is never created, and the deployment fails later with `Role 'repuser' does not exist` while granting the pg_rewind privileges. Roles needed by the tests are created by the mTLS play in playbook.yml, which passes pg_users through include_role rather than as an extra var."
 }

@@ -44,6 +44,60 @@ pg_hba_ip_addresses:
     state: present
 ```
 
+`options` carries whatever PostgreSQL puts after the authentication method,
+which is how a rule refers to an identity map or demands a client certificate:
+
+```yaml
+pg_hba_ip_addresses:
+  - contype: "hostssl"
+    users: "app_user"
+    databases: "all"
+    method: "cert"
+    source: "10.0.0.0/24"
+    options: "map=mtls clientcert=verify-full"
+```
+
+### `pg_ident_maps`
+
+Identity maps, used by `cert`, `peer` and `gssapi` authentication to translate
+an external identity into a PostgreSQL role. For client-certificate (mTLS)
+authentication the external identity is the certificate's Common Name.
+
+```yaml
+pg_ident_maps:
+  - mapname: "mtls"
+    system_username: "app_client"
+    pg_username: "app_user"
+  - mapname: "mtls"
+    comment: "any host certificate in the internal domain maps to its CN"
+    system_username: "/^(.*)\\.internal\\.example\\.com$"
+    pg_username: "\\1"
+    state: present
+```
+
+A `system_username` beginning with a slash is a regular expression, and `\1` in
+`pg_username` refers to its first capture group. Entries with
+`state: absent` are left out of the generated file.
+
+The maps are rendered **in full** into a separate, Ansible-managed file
+(`pg_ident_ansible.conf` by default, set by `pg_ident_managed_filename`), which
+the main `pg_ident.conf` includes:
+
+```
+include_if_exists 'pg_ident_ansible.conf'
+```
+
+That keeps one owner per file. This role owns every line of the managed file
+and regenerates it on each run, so removing an entry from `pg_ident_maps`
+removes it from PostgreSQL; `pg_ident.conf` keeps whatever the distribution or
+an operator put there and only ever gains the single include line. Requires
+PostgreSQL 15 or later, which is when `include` directives were added to
+`pg_ident.conf`.
+
+Maps are applied before HBA entries, because an HBA rule naming a map that does
+not exist yet is rejected on reload. Changes reload PostgreSQL; they do not
+restart it.
+
 ### `pg_slots`
 
 Replication slots management.

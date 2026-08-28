@@ -44,42 +44,69 @@ def check_tls_01(repo):
 
 def check_tls_02(repo):
     """
-    TLS-02: client-certificate authentication (mTLS) is never configured.
-    `ssl=on` plus a server certificate proves transport encryption, not client
-    identity. Without `clientcert=verify-full` in pg_hba, any client that
-    trusts the server CA can still authenticate by password alone.
+    TLS-02: client-certificate authentication (mTLS).
+
+    Two separate questions, and they moved apart:
+
+    1. Can the collection express mTLS at all? It needs somewhere to declare an
+       identity map, and an HBA writer that can emit the `map=` and
+       `clientcert=` options after the method.
+    2. Is it on by default? `ssl=on` plus a server certificate is transport
+       encryption; without a `cert` HBA rule any client that trusts the server
+       CA still authenticates by password alone.
+
+    A deployment that wants mTLS must opt in, so the shipped default is still
+    password authentication over TLS.
     """
     evidence = []
 
-    # Any active clientcert setting anywhere?
+    # (1) the mechanism: identity maps and HBA auth options.
+    ident_maps = repo.grep(r'^\s*pg_ident_maps\s*:',
+                           subdirs=('roles/manage_dbserver',),
+                           suffixes=('.yml',))
+    ident_tasks = repo.grep(r'ident_file|pg_ident_managed_filename',
+                            subdirs=('roles/manage_dbserver/tasks',),
+                            suffixes=('.yml',))
+    hba_options = repo.grep(r'^\s*options:\s*"\{\{\s*line_item\.options',
+                            subdirs=('roles/manage_dbserver/tasks',),
+                            suffixes=('.yml',))
+
+    for rel, hits in (('', ident_maps), ('', ident_tasks), ('', hba_options)):
+        for r, n, line in hits[:3]:
+            evidence.append(quote(r, n, line))
+
+    has_mechanism = bool(ident_maps) and bool(ident_tasks) and bool(hba_options)
+
+    # (2) is any shipped default or example actually turning it on?
     clientcert = repo.grep(r'clientcert',
                            subdirs=('roles', 'playbook-examples'),
                            suffixes=('.yml', '.j2', '.template'))
-    active = [(rel, n, line) for rel, n, line in clientcert
-              if not line.strip().startswith('#')]
+    enabled_by_default = [(rel, n, line) for rel, n, line in clientcert
+                          if not line.strip().lstrip('-').strip().startswith('#')]
 
-    for rel, n, line in clientcert[:8]:
+    for rel, n, line in clientcert[:4]:
         evidence.append(quote(rel, n, line))
 
-    # pg_ident identity mapping, the other half of mTLS.
-    ident = repo.grep(r'pg_ident|ident_map',
-                      subdirs=('roles/init_dbserver', 'roles/manage_dbserver'),
-                      suffixes=('.yml', '.j2', '.template'))
-    for rel, n, line in ident[:4]:
-        evidence.append(quote(rel, n, line))
+    if not has_mechanism:
+        if not clientcert:
+            evidence.append(missing('clientcert'))
+        return Result(
+            'TLS-02', PRESENT,
+            'the collection cannot express mTLS: no identity-map support and '
+            'no way to emit clientcert/map options into pg_hba', evidence)
 
-    if active:
+    if enabled_by_default:
         return Result('TLS-02', FIXED,
-                      'clientcert authentication is configured', evidence)
-
-    if not clientcert:
-        evidence.append(missing('clientcert'))
+                      'mTLS is supported and enabled by a shipped default',
+                      evidence)
 
     return Result(
-        'TLS-02', PRESENT,
-        'clientcert=verify-full is never set (the only occurrences are '
-        'commented-out examples), so the deployment gets transport encryption '
-        'but not client-certificate identity', evidence)
+        'TLS-02', PARTIAL,
+        'mTLS is now expressible -- pg_ident_maps renders an Ansible-managed '
+        'map file that pg_ident.conf includes, and the HBA writer can emit '
+        'map=/clientcert= options -- but no shipped default turns it on, so '
+        'the out-of-the-box deployment is still password authentication over '
+        'TLS', evidence)
 
 
 def check_tls_03(repo):

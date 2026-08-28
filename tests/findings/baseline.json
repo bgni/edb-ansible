@@ -21,7 +21,7 @@
     "EDB-18": "PRESENT",
     "LOCAL-01": "PRESENT",
     "TLS-01": "PRESENT",
-    "TLS-02": "PRESENT",
+    "TLS-02": "PARTIAL",
     "TLS-03": "PRESENT"
   }
 }

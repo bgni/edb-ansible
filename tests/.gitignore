@@ -6,3 +6,4 @@
 **/.DS_Store
 **/__pycache__/
 cases/*/inventory.yml
+cases/*/certs/

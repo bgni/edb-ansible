@@ -500,30 +500,34 @@ def test_finding_edb_01_failover_is_automatic_without_fencing():
         'refresh tests/findings/baseline.json.' % match.group(1))
 
 
-def test_finding_tls_02_no_client_certificate_authentication():
+def test_prod_topology_tls_is_enabled_with_the_issued_chain():
     """
-    TLS-02: the deployment has no client-certificate authentication.
+    Every database node serves TLS using the externally issued certificate,
+    not one the collection generated for itself.
 
-    The target architecture assumes certbot with a local ACME server issuing
-    both client and server certificates. The collection has no ACME
-    integration (TLS-01) and never writes `clientcert=verify-full`, so even
-    with TLS enabled a client that trusts the server CA still authenticates by
-    password alone.
+    The certificates come from the CA issued on the control node, standing in
+    for the deployment's ACME server. Client-certificate authentication on top
+    of this is covered by test_prod_topology_mtls.py.
     """
-    hba_paths = []
+    ca_common_name = load_ansible_vars()['tls_ca_common_name']
 
     for name, host in all_database_nodes():
+        assert show(host, 'ssl') == 'on', '%s: ssl is not on' % name
+
+        issuer = psql_output(
+            host,
+            "SELECT issuer_dn FROM pg_stat_ssl "
+            'WHERE pid = pg_backend_pid()')
+
+        # A unix-socket backend reports no TLS, so only assert on the issuer
+        # when the session actually negotiated it.
+        if issuer:
+            assert ca_common_name in issuer, \
+                '%s: session certificate issued by %r, expected the test CA ' \
+                '%r' % (name, issuer, ca_common_name)
+
         pgdata = show(host, 'data_directory')
-        hba = host.file('%s/pg_hba.conf' % pgdata)
 
-        if not hba.exists:
-            continue
-
-        hba_paths.append(name)
-
-        assert 'clientcert' not in hba.content_string, (
-            'TLS-02 appears to be FIXED: %s has a clientcert rule in '
-            'pg_hba.conf. Remove this test and refresh '
-            'tests/findings/baseline.json.' % name)
-
-    assert hba_paths, 'no pg_hba.conf found on any database node'
+        for filename in ('server.crt', 'server.key', 'root.crt'):
+            assert host.file('%s/%s' % (pgdata, filename)).exists, \
+                '%s: %s/%s is missing' % (name, pgdata, filename)

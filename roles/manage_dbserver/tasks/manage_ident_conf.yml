@@ -1,0 +1,59 @@
+---
+# Renders the Ansible-managed identity maps into their own file and includes
+# that file from the main pg_ident.conf.
+#
+# Writing a separate file rather than editing pg_ident.conf keeps one owner per
+# file: this role owns every line of pg_ident_ansible.conf and rewrites it
+# wholesale, while pg_ident.conf keeps whatever the distribution or an operator
+# put there and only gains a single include line. PostgreSQL 15 and later
+# support `include`/`include_if_exists` in pg_ident.conf.
+- name: Find the ident file location
+  community.postgresql.postgresql_query:
+    login_user: "{{ pg_owner }}"
+    port: "{{ pg_port }}"
+    login_unix_socket: "{{ pg_unix_socket_directories[0] }}"
+    query: "show ident_file;"
+    db: "{{ pg_database }}"
+  when: pg_ident_maps|length > 0
+  become: true
+  become_user: "{{ pg_owner }}"
+  no_log: "{{ disable_logging }}"
+  register: ident_info
+
+- name: Set the ident file facts
+  ansible.builtin.set_fact:
+    _pg_ident_file: "{{ ident_info.query_result[0].ident_file }}"
+    _pg_ident_managed_file: "{{ ident_info.query_result[0].ident_file | dirname }}/{{ pg_ident_managed_filename }}"
+  when: pg_ident_maps|length > 0
+
+- name: Create the Ansible managed ident map file
+  ansible.builtin.template:
+    src: pg_ident_ansible.conf.j2
+    dest: "{{ _pg_ident_managed_file }}"
+    owner: "{{ pg_owner }}"
+    group: "{{ pg_group }}"
+    mode: "0600"
+  become: true
+  when: pg_ident_maps|length > 0
+  notify:
+    - Reload the pg service
+
+# The include is relative, which PostgreSQL resolves against the directory
+# holding pg_ident.conf. include_if_exists rather than include so that removing
+# the managed file does not stop Postgres from starting.
+- name: Include the Ansible managed ident map file from pg_ident.conf
+  ansible.builtin.lineinfile:
+    path: "{{ _pg_ident_file }}"
+    line: "include_if_exists '{{ pg_ident_managed_filename }}'"
+    regexp: "^\\s*include_if_exists\\s+'{{ pg_ident_managed_filename }}'\\s*$"
+    owner: "{{ pg_owner }}"
+    group: "{{ pg_group }}"
+    mode: "0600"
+    state: present
+  become: true
+  when: pg_ident_maps|length > 0
+  notify:
+    - Reload the pg service
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
