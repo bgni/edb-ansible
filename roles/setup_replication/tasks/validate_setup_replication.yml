@@ -79,14 +79,16 @@
   become: true
 
 - name: Print query results
-  ansible.builtin.debug: var=sql_query_output
+  ansible.builtin.debug:
+    var: sql_query_output
   when:
-   - debug | default(false) | bool
+    - debug | default(false) | bool
 
 - name: Print standby node info
-  ansible.builtin.debug: var=standby_node_info
+  ansible.builtin.debug:
+    var: standby_node_info
   when:
-   - debug | default(false) | bool
+    - debug | default(false) | bool
 
 - name: Check if pg_stat_replication shows replication slots correctly
   ansible.builtin.assert:

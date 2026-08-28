@@ -18,7 +18,7 @@
     - pg_type == 'EPAS'
 
 - name: Print basebackup command.
-  debug:
+  ansible.builtin.debug:
     var: pg_basebackup
 
 - name: Create standby

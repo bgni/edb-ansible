@@ -15,14 +15,14 @@
     - Stop PG service
     - Drop the default PG debian database
 
-#- name: Install sslutils
-#  ansible.builtin.package:
-#    name:
-#      - postgresql-{{ pg_version }}-sslutils
-#    state: present
-#    update_cache: true
-#  become: true
-#  when: pg_ssl
+# - name: Install sslutils
+#   ansible.builtin.package:
+#     name:
+#       - postgresql-{{ pg_version }}-sslutils
+#     state: present
+#     update_cache: true
+#   become: true
+#   when: pg_ssl
 
 - name: Install python3-psycopg2
   ansible.builtin.package:
