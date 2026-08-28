@@ -15,6 +15,12 @@ build-rocky9:
 	$(COMPOSE) up standby1-rocky9 -d
 	$(COMPOSE) up standby2-rocky9 -d
 
+build-rhel9:
+	$(COMPOSE) up postgres01-rhel9 -d
+	$(COMPOSE) up postgres02-rhel9 -d
+	$(COMPOSE) up postgres03-rhel9 -d
+	$(COMPOSE) up postgres04-rhel9 -d
+
 build-almalinux8:
 	$(COMPOSE) up primary1-almalinux8 -d
 	$(COMPOSE) up standby1-almalinux8 -d

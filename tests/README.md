@@ -214,6 +214,35 @@ The Python helper scripts auto-detect Podman first and Docker second when the
 variable is not set. Set it explicitly when both are installed so that the
 Make and Python layers use the same engine.
 
+### PostgreSQL 17 four-node replication case
+
+Run the RHEL 9.7-compatible PostgreSQL 17 replication case with either engine:
+
+```shell
+CONTAINER_ENGINE=podman \
+ANSIBLE_CORE_VERSION=2.15 \
+EDB_PG_TYPE=PG \
+EDB_PG_VERSION=17 \
+EDB_ENABLE_REPO=false \
+make -C tests/cases/setup_replication rhel9
+```
+
+Replace `podman` with `docker` for Docker Compose. Rootful containers are
+required because each database container runs systemd. The default target
+image is Red Hat UBI Init 9.7; set `RHEL_BASE_IMAGE` to the exact internal RHEL
+9.7 image used by production when it is available.
+
+This case creates `postgres01` through `postgres04`, checks all three physical
+replication connections and slots, verifies the following setting on every
+database node, and proves that a commit succeeds while one standby is down:
+
+```text
+ANY 1 ("postgres01","postgres02","postgres03","postgres04")
+```
+
+Container coverage does not replace VM tests for systemd, storage, SELinux,
+firewalld, networking, or failure/restart behavior.
+
 Containers hosting Postgres and the components we had tested with the help of
 the previous command are not automatically destroyed. For cleaning up those,
 the following command should be executed:

@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1
+
+# UBI provides RHEL 9 user space and systemd without requiring a subscription.
+# Override RHEL_BASE_IMAGE with an internally mirrored RHEL 9.7 image when the
+# exact production image is available.
+ARG RHEL_BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-init:9.7
+FROM ${RHEL_BASE_IMAGE}
+
+ENV container=oci
+
+RUN dnf -y install \
+      ca-certificates \
+      glibc-langpack-en \
+      hostname \
+      iproute \
+      openssh-clients \
+      openssh-server \
+      procps-ng \
+      python3 \
+      sudo \
+      which \
+    && dnf clean all \
+    && ssh-keygen -A
+
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]
