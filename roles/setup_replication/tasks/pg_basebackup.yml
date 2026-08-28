@@ -8,9 +8,9 @@
     pg_basebackup: "{{ pg_basebackup + ' --waldir=' + pg_wal }}"
   when: pg_wal|length > 0  and not pg_data in pg_wal
 
-- name: Add slot_name in pg_basebackup
+- name: Use the physical slot created on the upstream node
   ansible.builtin.set_fact:
-    pg_basebackup: "{{ pg_basebackup + ' -C --slot=' }}{{ inventory_hostname | regex_replace('[^a-zA-Z0-9_]', '_') }}"
+    pg_basebackup: "{{ pg_basebackup + ' --slot=' }}{{ inventory_hostname | regex_replace('[^a-zA-Z0-9_]', '_') }}"
   when: use_replication_slots
 
 - name: Set replication user information

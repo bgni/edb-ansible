@@ -1,5 +1,8 @@
+CONTAINER_ENGINE ?= docker
+COMPOSE := $(CONTAINER_ENGINE) compose
+
 ansible-tester-up:
-	docker compose up ansible-tester --force-recreate --build --abort-on-container-exit --exit-code-from ansible-tester
+	$(COMPOSE) up ansible-tester --force-recreate --build --abort-on-container-exit --exit-code-from ansible-tester
 
 post-build:
 	python3 ../../scripts/ssh-keygen.py --ssh-dir .ssh
@@ -45,4 +48,4 @@ oraclelinux9: build-oraclelinux9 post-build ansible-tester-up
 clean:
 	rm -rf ./.ssh
 	rm -f ./inventory.yml
-	docker compose rm -s -f
+	$(COMPOSE) rm -s -f

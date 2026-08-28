@@ -8,9 +8,11 @@
 #
 # The tag is pinned so the image keeps matching the RHEL minor version the
 # test case claims to cover. Bump `rhel9_image_tag` when moving to a newer
-# minor release.
+# minor release. RHEL_BASE_IMAGE can be set directly to point at an internally
+# mirrored image instead.
 ARG rhel9_image_tag=9.7
-FROM registry.access.redhat.com/ubi9/ubi-init:${rhel9_image_tag}
+ARG RHEL_BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-init:${rhel9_image_tag}
+FROM ${RHEL_BASE_IMAGE}
 
 RUN (cd /lib/systemd/system/sysinit.target.wants/; for i in *; do [ $i == \
 systemd-tmpfiles-setup.service ] || rm -f $i; done); \
@@ -32,4 +34,6 @@ RUN dnf install openssh-clients -y
 RUN dnf install openssh-server -y
 RUN dnf install which -y
 RUN dnf install iproute -y
+RUN dnf install hostname -y
+RUN dnf install procps-ng -y
 RUN dnf clean all

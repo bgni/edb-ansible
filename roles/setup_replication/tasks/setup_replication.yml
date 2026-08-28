@@ -68,9 +68,9 @@
     - not validate_only|bool
     - not remove_only|bool
 
-- name: Prepare synchronous_standby_names
+- name: Collect synchronous standby application names from inventory
   ansible.builtin.set_fact:
-    _synchronous_standbys: "{{ _synchronous_standbys | default([]) + [node.inventory_hostname] }}"
+    _synchronous_standbys: "{{ _synchronous_standbys | default([]) + [node.application_name] }}"
   loop: "{{ pg_cluster_nodes }}"
   loop_control:
     loop_var: node
@@ -78,6 +78,7 @@
     - node.node_type == 'standby'
     - node.replication_type == 'synchronous'
     - synchronous_standby_names|length < 1
+    - synchronous_standby_application_names|length < 1
     - not validate_only|bool
     - not remove_only|bool
   no_log: "{{ disable_logging }}"
@@ -127,14 +128,16 @@
     - name: Configure standby node
       ansible.builtin.import_tasks: configure_node.yml
 
-- name: Update primary for synchronous replication
+- name: Configure promotion-ready synchronous replication policy
   ansible.builtin.import_tasks: primary_synchronous_param.yml
   when:
-    - (_synchronous_standbys is defined and _synchronous_standbys|length > 0) or synchronous_standby_names|length > 0
+    - >-
+      (_synchronous_standbys is defined and _synchronous_standbys|length > 0) or
+      synchronous_standby_application_names|length > 0 or
+      synchronous_standby_names|length > 0
     - not validate_only|bool
     - not remove_only|bool
   run_once: true
-  delegate_to: "{{ primary_inventory_hostname }}"
   no_log: "{{ disable_logging }}"
 
 - name: Import validation tasks

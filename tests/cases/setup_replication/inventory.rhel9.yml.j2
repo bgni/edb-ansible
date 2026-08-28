@@ -1,0 +1,29 @@
+---
+all:
+  children:
+    primary:
+      hosts:
+        postgres01:
+          ansible_host: {{ inventory_vars['postgres01_ip'] }}
+          private_ip: {{ inventory_vars['postgres01_ip'] }}
+          replication_application_name: postgres01
+    standby:
+      hosts:
+        postgres02:
+          ansible_host: {{ inventory_vars['postgres02_ip'] }}
+          private_ip: {{ inventory_vars['postgres02_ip'] }}
+          replication_application_name: postgres02
+          replication_type: synchronous
+          upstream_node_private_ip: {{ inventory_vars['postgres01_ip'] }}
+        postgres03:
+          ansible_host: {{ inventory_vars['postgres03_ip'] }}
+          private_ip: {{ inventory_vars['postgres03_ip'] }}
+          replication_application_name: postgres03
+          replication_type: synchronous
+          upstream_node_private_ip: {{ inventory_vars['postgres01_ip'] }}
+        postgres04:
+          ansible_host: {{ inventory_vars['postgres04_ip'] }}
+          private_ip: {{ inventory_vars['postgres04_ip'] }}
+          replication_application_name: postgres04
+          replication_type: synchronous
+          upstream_node_private_ip: {{ inventory_vars['postgres01_ip'] }}

@@ -117,6 +117,7 @@ def get_pg_version():
 
 def os_family():
     if (get_os().startswith('centos') or get_os().startswith('rocky')
+        or get_os().startswith('rhel')
         or get_os().startswith('almalinux')
         or get_os().startswith('oraclelinux')
         or get_os().startswith('rhel')):

@@ -71,3 +71,4 @@ supported_pg_version:
   - 14
   - 15
   - 16
+  - 17

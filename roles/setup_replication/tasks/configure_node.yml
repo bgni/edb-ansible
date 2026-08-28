@@ -23,7 +23,7 @@
 
 - name: Create standby
   ansible.builtin.shell: >
-    PGAPPNAME={{ inventory_hostname }} {{ pg_basebackup }}
+    PGAPPNAME={{ replication_application_name | quote }} {{ pg_basebackup }}
   args:
     creates: "{{ pg_data }}/PG_VERSION"
   become: true

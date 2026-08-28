@@ -1,6 +1,10 @@
 #!/bin/bash -eux
 cd /workspace
 make install-build
+CASE_VARS="/workspace/tests/cases/${CASE_NAME}/vars.${EDB_OS}.json"
+if [[ ! -f "${CASE_VARS}" ]]; then
+	CASE_VARS="/workspace/tests/cases/${CASE_NAME}/vars.json"
+fi
 mkdir -p /root/.ssh
 chmod 0700 /root/.ssh
 cp /workspace/tests/cases/${CASE_NAME}/.ssh/id_rsa /root/.ssh/.
@@ -15,7 +19,7 @@ ANSIBLE_PIPELINING=1 ansible-playbook \
 	--extra-vars "enable_edb_repo=${EDB_ENABLE_REPO}" \
 	--extra-vars "pg_type=${EDB_PG_TYPE}" \
 	--extra-vars "pg_version=${EDB_PG_VERSION}" \
-	--extra-vars "@/workspace/tests/cases/${CASE_NAME}/vars.json" \
+	--extra-vars "@${CASE_VARS}" \
 	--extra-vars "ansible_core_version=${ANSIBLE_CORE_VERSION}" \
 	--private-key /root/.ssh/id_rsa \
 	/workspace/tests/cases/${CASE_NAME}/playbook.yml
@@ -24,5 +28,5 @@ export EDB_SSH_USER=root
 export EDB_SSH_KEY=/root/.ssh/id_rsa
 export EDB_SSH_CONFIG=/root/.ssh/ssh_config
 export EDB_INVENTORY=/workspace/tests/cases/${CASE_NAME}/inventory.yml
-export EDB_ANSIBLE_VARS=/workspace/tests/cases/${CASE_NAME}/vars.json
+export EDB_ANSIBLE_VARS="${CASE_VARS}"
 py.test -v -k ${CASE_NAME} /workspace/tests/tests
