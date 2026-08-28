@@ -34,6 +34,7 @@
 #   --phase LIST          comma-separated subset
 #   --preinstalled        use the pre-built package image, no repository needed
 #   --keep                leave the cluster running afterwards
+#   --clean               tear the cluster down and exit
 #
 set -euo pipefail
 
@@ -49,6 +50,7 @@ PGVER="${EDB_PG_VERSION:-17}"
 PHASES="provision,reconfigure,failover"
 KEEP=false
 PREINSTALLED=false
+CLEAN_ONLY=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -56,6 +58,7 @@ while [[ $# -gt 0 ]]; do
         --postgres-version) PGVER="$2"; shift 2 ;;
         --phase) PHASES="$2"; shift 2 ;;
         --keep) KEEP=true; shift ;;
+        --clean) CLEAN_ONLY=true; shift ;;
         --preinstalled) PREINSTALLED=true; shift ;;
         -h|--help) sed -n '2,45p' "$0"; exit 0 ;;
         *) die "unknown argument: $1" ;;
@@ -87,6 +90,16 @@ export LIFECYCLE_PHASES="${PHASES}"
 export PREINSTALLED
 if [[ "${PREINSTALLED}" == true ]]; then
     export RHEL_BASE_IMAGE="${PREINSTALLED_IMAGE:-localhost/edb-ansible/rhel9-pg17:local}"
+fi
+
+if [[ "${CLEAN_ONLY}" == true ]]; then
+    cd "${CASE_DIR}"
+    "${COMPOSE[@]}" rm -s -f >/dev/null 2>&1 || true
+    ids="$("${ENGINE}" ps -aq --filter "name=${CASE_NAME}-" 2>/dev/null || true)"
+    [[ -n "${ids}" ]] && "${ENGINE}" rm -f ${ids} >/dev/null 2>&1 || true
+    rm -rf ./.ssh ./inventory.yml
+    printf 'torn down %s\n' "${CASE_NAME}"
+    exit 0
 fi
 
 RESULTS="${CASE_DIR}/results"

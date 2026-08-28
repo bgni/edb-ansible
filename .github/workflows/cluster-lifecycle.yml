@@ -1,0 +1,111 @@
+name: Cluster lifecycle (provision, reconfigure, failover)
+
+# Deploys one primary, three standbys, a repmgr witness and a pgBackRest
+# repository host with the collection from this branch, then:
+#
+#   1. provision    the cluster serves queries
+#   2. reconfigure  re-run the playbook with synchronous_standby_names changed
+#                   from '*' to a named ANY 1, and observe it converge on the
+#                   running cluster
+#   3. failover     SIGKILL and fence the primary while writes are in flight,
+#                   promote through repmgr, and require every acknowledged
+#                   transaction to be present on the promoted node
+#
+# Runs on dispatch rather than on every push: six systemd containers and three
+# playbook runs is minutes, not seconds. The per-push lane is push.yml.
+#
+# A runner has 16 GB against the 3.3 GB of the development machine this was
+# built on, which is the point -- memory, not CPU, is what constrains this
+# suite. No --preinstalled or reduced forks are needed here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      phases:
+        description: 'Phases to run'
+        required: false
+        default: 'provision,reconfigure,failover'
+      pg_version:
+        description: 'PostgreSQL major version'
+        required: false
+        default: '17'
+      keep_logs:
+        description: 'Upload full logs even on success'
+        required: false
+        default: 'false'
+
+env:
+  CONTAINER_ENGINE: docker
+  EDB_PG_TYPE: PG
+  EDB_PG_VERSION: ${{ github.event.inputs.pg_version || '17' }}
+  EDB_ENABLE_REPO: 'false'
+  ANSIBLE_CORE_VERSION: '2.15'
+  # 16 GB, so the dnf serialisation the small development machine needed is
+  # unnecessary here.
+  ANSIBLE_FORKS: '10'
+
+jobs:
+  lifecycle:
+    # Pinned: the containers run systemd, which is sensitive to the runner's
+    # cgroup layout.
+    runs-on: ubuntu-22.04
+    name: Provision, reconfigure, fail over
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          # ansible-galaxy builds the collection tarball the runner installs;
+          # jinja2 and pyyaml come with it and are used by the inventory scripts.
+          sudo pip3 install "ansible-core==${ANSIBLE_CORE_VERSION}"
+
+      - name: Show what is under test
+        run: |
+          echo "commit:  $(git rev-parse HEAD)"
+          echo "runner:  $(nproc) cores, $(free -h | awk '/^Mem:/{print $2}') RAM"
+
+      - name: Run the lifecycle
+        run: |
+          ./tests/run-cluster-lifecycle.sh \
+            --engine docker \
+            --phase '${{ github.event.inputs.phases || 'provision,reconfigure,failover' }}'
+
+      - name: Collect Postgres logs
+        if: failure()
+        working-directory: tests/cases/cluster_lifecycle
+        run: |
+          for s in postgres01 postgres02 postgres03 postgres04 witness1; do
+            echo "::group::${s}"
+            docker compose exec -T "${s}-rhel9" \
+              journalctl -u "postgresql-${EDB_PG_VERSION}" --no-pager -n 200 || true
+            echo "::endgroup::"
+          done
+
+      - name: Collect repmgr state
+        if: failure()
+        working-directory: tests/cases/cluster_lifecycle
+        run: |
+          for s in postgres01 postgres02 postgres03 postgres04; do
+            echo "::group::repmgr ${s}"
+            docker compose exec -T "${s}-rhel9" \
+              su - postgres -c "/usr/pgsql-${EDB_PG_VERSION}/bin/repmgr -f /etc/repmgr/${EDB_PG_VERSION}/repmgr-main.conf cluster show" || true
+            docker compose exec -T "${s}-rhel9" \
+              grep -E '^failover' "/etc/repmgr/${EDB_PG_VERSION}/repmgr-main.conf" || true
+            echo "::endgroup::"
+          done
+
+      - name: Upload results
+        if: always() && (failure() || github.event.inputs.keep_logs == 'true')
+        uses: actions/upload-artifact@v4
+        with:
+          name: cluster-lifecycle-results
+          path: tests/cases/cluster_lifecycle/results/
+          if-no-files-found: ignore
+
+      - name: Tear down
+        if: always()
+        run: ./tests/run-cluster-lifecycle.sh --engine docker --clean || true
