@@ -585,3 +585,10 @@ cases:
     - PG
     os:
     - rhel9
+  prod_topology:
+    pg_version:
+    - 17
+    pg_type:
+    - PG
+    os:
+    - rhel9

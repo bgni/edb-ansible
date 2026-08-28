@@ -1,0 +1,64 @@
+---
+# Deploys the production-shaped topology the source reviews describe:
+# PostgreSQL 17 on RHEL 9, one primary and three standbys under quorum
+# synchronous replication, a repmgr witness, pgBackRest, and an HAProxy client
+# gate fed by the postgres-cluster-xinetd health endpoint.
+- hosts: all
+  name: Production-shaped cluster deployment
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+
+  collections:
+    - edb_devops.edb_postgres
+
+  pre_tasks:
+    - name: Initialize the user defined variables
+      set_fact:
+        disable_logging: false
+
+  roles:
+    - role: setup_repo
+      when: "'setup_repo' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: install_dbserver
+      when: "'install_dbserver' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: init_dbserver
+      when: "'init_dbserver' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: setup_replication
+      when: "'setup_replication' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: setup_repmgr
+      when: "'setup_repmgr' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: setup_pgbackrestserver
+      when: "'setup_pgbackrestserver' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: setup_pgbackrest
+      when: "'setup_pgbackrest' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: manage_dbserver
+      when: "'manage_dbserver' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+
+# The health endpoint HAProxy probes. postgres-cluster-xinetd is not in the
+# supported_roles map, so it cannot be gated the way the roles above are and
+# has to be targeted explicitly -- which is finding EDB-13 in practice.
+- hosts: primary,standby
+  name: Health-check endpoint for the HAProxy gate
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+
+  collections:
+    - edb_devops.edb_postgres
+
+  roles:
+    - role: postgres-cluster-xinetd
+
+- hosts: proxy
+  name: HAProxy client gate
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+
+  collections:
+    - edb_devops.edb_postgres
+
+  roles:
+    - role: setup_haproxy
+      when: "'setup_haproxy' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"

@@ -1,0 +1,67 @@
+---
+# Four PostgreSQL nodes, a repmgr witness, a pgBackRest repository host and an
+# HAProxy client gate.
+#
+# `replication_application_name` is set explicitly on every database node so
+# the synchronous policy in vars.json can name its quorum members without
+# depending on how the role derives a name from the inventory hostname.
+all:
+  children:
+    primary:
+      hosts:
+        primary1:
+          ansible_host: {{ inventory_vars['primary1_ip'] }}
+          private_ip: {{ inventory_vars['primary1_ip'] }}
+          replication_application_name: primary1
+          pgbackrest: true
+          pgbackrest_server_private_ip: {{ inventory_vars['pgbackrest1_ip'] }}
+          pgbackrest_archive_method: async
+    standby:
+      hosts:
+        standby1:
+          ansible_host: {{ inventory_vars['standby1_ip'] }}
+          private_ip: {{ inventory_vars['standby1_ip'] }}
+          replication_application_name: standby1
+          replication_type: synchronous
+          upstream_node_private_ip: {{ inventory_vars['primary1_ip'] }}
+          pgbackrest: true
+          pgbackrest_server_private_ip: {{ inventory_vars['pgbackrest1_ip'] }}
+          pgbackrest_archive_method: async
+        standby2:
+          ansible_host: {{ inventory_vars['standby2_ip'] }}
+          private_ip: {{ inventory_vars['standby2_ip'] }}
+          replication_application_name: standby2
+          replication_type: synchronous
+          upstream_node_private_ip: {{ inventory_vars['primary1_ip'] }}
+          pgbackrest: true
+          pgbackrest_server_private_ip: {{ inventory_vars['pgbackrest1_ip'] }}
+          pgbackrest_archive_method: async
+        standby3:
+          ansible_host: {{ inventory_vars['standby3_ip'] }}
+          private_ip: {{ inventory_vars['standby3_ip'] }}
+          replication_application_name: standby3
+          replication_type: synchronous
+          upstream_node_private_ip: {{ inventory_vars['primary1_ip'] }}
+          pgbackrest: true
+          pgbackrest_server_private_ip: {{ inventory_vars['pgbackrest1_ip'] }}
+          pgbackrest_archive_method: async
+    witness:
+      hosts:
+        witness1:
+          ansible_host: {{ inventory_vars['witness1_ip'] }}
+          private_ip: {{ inventory_vars['witness1_ip'] }}
+          init_dbserver: true
+          upstream_node_private_ip: {{ inventory_vars['primary1_ip'] }}
+    pgbackrestserver:
+      hosts:
+        pgbackrest1:
+          ansible_host: {{ inventory_vars['pgbackrest1_ip'] }}
+          private_ip: {{ inventory_vars['pgbackrest1_ip'] }}
+    proxy:
+      hosts:
+        haproxy1:
+          ansible_host: {{ inventory_vars['haproxy1_ip'] }}
+          private_ip: {{ inventory_vars['haproxy1_ip'] }}
+          haproxy: true
+          haproxy_configure: true
+          proxy_location: 'zone1'

@@ -4,3 +4,4 @@
 .ssh*
 /scripts/lib
 **/.DS_Store
+**/__pycache__/

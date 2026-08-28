@@ -53,14 +53,20 @@ The quorum is declared once, in the test case `vars.json`:
 
 ```json
 {
-  "synchronous_standby_names": "ANY 2 (\"standby1\", \"standby2\", \"standby3\")"
+  "synchronous_standby_names": "",
+  "synchronous_standby_application_names": ["standby1", "standby2", "standby3"],
+  "synchronous_standby_num_sync": 2,
+  "standby_quorum_type": "ANY"
 }
 ```
 
-The `setup_replication` role only derives `synchronous_standby_names` on its
-own when the variable is left empty, and it then requires *every* synchronous
-standby to confirm a commit. Setting the variable explicitly, as above, is what
-selects a quorum of two out of three.
+`synchronous_standby_names` is left **empty on purpose**. The
+`setup_replication` role builds the value from the three fields below it only
+when that variable is empty; pinning the finished
+`ANY 2 ("standby1", ...)` string instead takes the literal branch in
+`primary_synchronous_param.yml` and skips the generator and its validation
+asserts entirely — so the case would no longer cover the code it exists to
+cover.
 
 Both the deployment and the assertions read that single declaration, so
 changing the quorum in `vars.json` changes what is deployed *and* what is
@@ -93,6 +99,66 @@ $ make -C cases/setup_quorum_replication rhel9
 
 PostgreSQL comes from the PGDG repositories, so no EDB repository credentials
 are required.
+
+## Test case: `prod_topology`
+
+This case deploys the full topology the source reviews assume, and runs the
+live half of the finding audit against it:
+
+- one primary and three standbys under `ANY 2` quorum synchronous replication,
+- a repmgr witness,
+- a pgBackRest repository host,
+- an HAProxy client gate fed by the `postgres-cluster-xinetd` health endpoint.
+
+```shell
+$ export EDB_PG_TYPE=PG
+$ export EDB_PG_VERSION=17
+$ export EDB_ENABLE_REPO=false
+$ export ANSIBLE_CORE_VERSION=2.15
+$ make -C cases/prod_topology rhel9
+```
+
+It brings up eight containers and builds a real cluster, so it is much heavier
+than the per-push cases. CI runs it from the `prod-topology.yml` workflow on
+manual dispatch only, not on every push.
+
+`tests/tests/test_prod_topology.py` holds two kinds of test, and the difference
+matters when reading a failure:
+
+- `test_*` — things that must work: every node running the requested major
+  version, correct primary/standby roles, `pg_basebackup` having produced a
+  real clone of the primary on each standby, one active physical slot per
+  standby, all three standbys streaming, the synchronous policy **identical on
+  every promotion-capable node**, writes reaching all standbys, repmgr holding
+  all five nodes, HAProxy up with every backend, and a healthy pgBackRest
+  stanza.
+- `test_finding_*` — the reviewed defects. These **pass while the defect is
+  present**, so the known-bad behaviour is visible in CI and cannot be fixed
+  silently. Each names its finding and says what a fix looks like; when one is
+  fixed the test fails and tells you to remove it and refresh
+  `tests/findings/baseline.json`.
+
+### TLS in this case
+
+`pg_ssl` is `false` here. The collection has no ACME/certbot integration, and
+its only built-in certificate path generates a private self-signed CA *inside
+the database* through the EDB `sslutils` extension — which is not the
+ACME-issued chain a certbot deployment assumes. Enabling `pg_ssl` would
+therefore test `sslutils`, not the deployment. The gap is asserted directly
+instead, by `test_finding_tls_02_no_client_certificate_authentication`.
+
+## Checking the source-review findings
+
+`tests/findings/` checks the collection's source against the published review
+findings without deploying anything. It needs only `python3` and runs in
+seconds:
+
+```shell
+$ python3 tests/findings/check_findings.py           # report
+$ python3 tests/findings/check_findings.py --check   # fail on drift from baseline
+```
+
+See `tests/findings/README.md`.
 
 ### About the RHEL 9 containers
 

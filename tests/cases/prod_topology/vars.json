@@ -1,0 +1,27 @@
+{
+  "use_hostname": false,
+  "pg_data": "/opt/pgdata",
+  "pg_wal": "/opt/pgwal",
+
+  "_comment_sync": "The quorum is declared once, here, and both the deployment and the assertions read this single declaration. num_sync is 2, not the role default of 1: with three standbys, ANY 2 keeps two remote durable copies and still tolerates one standby outage, which is the policy the production-readiness review recommends for a consistency-first design. Leaving synchronous_standby_names empty is deliberate -- it forces the role to build the value from the fields below, so the generator and its assertions are actually exercised.",
+  "synchronous_standby_names": "",
+  "synchronous_standby_application_names": [
+    "standby1",
+    "standby2",
+    "standby3"
+  ],
+  "synchronous_standby_num_sync": 2,
+  "standby_quorum_type": "ANY",
+
+  "_comment_ssl": "TLS is off in this case. The collection has no ACME/certbot integration (finding TLS-01), and its only built-in certificate path generates a private self-signed CA inside the database through the EDB sslutils extension (TLS-03), which is not the ACME-issued chain the target deployment assumes. Turning pg_ssl on here would test sslutils, not the deployment. The TLS gap is asserted directly in test_prod_topology.py instead.",
+  "pg_ssl": false,
+
+  "_comment_failover": "repmgr_failover is left at the role default so the deployment test observes the shipped behaviour rather than a corrected one. test_prod_topology.py asserts what the default actually produces (finding EDB-01).",
+
+  "pg_users": [
+    {
+      "name": "test",
+      "pass": "password"
+    }
+  ]
+}

@@ -3,6 +3,16 @@ name: edb-ansible testing
 on: [push, pull_request]
 
 jobs:
+  findings:
+    runs-on: ubuntu-22.04
+    name: Source-review findings have not drifted
+    steps:
+      - uses: actions/checkout@v4
+      # Static analysis only: no containers, no cluster, a few seconds. It
+      # compares every published source-review finding against the tree and
+      # fails if any of them changed state, so a fixed finding cannot regress
+      # unnoticed and a new fix cannot land without being recorded.
+      - run: python3 tests/findings/check_findings.py --check
   build:
     runs-on: ubuntu-20.04
     name: Execute ansible-lint

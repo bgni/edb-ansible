@@ -3,9 +3,13 @@ Non regression tests for a four node Postgres cluster (one primary and three
 standbys) using quorum based synchronous replication.
 
 The quorum is declared once, in the test case `vars.json`, as
-`synchronous_standby_names`. Both the deployment and the assertions below
-derive from that single declaration, so changing the quorum in `vars.json`
-changes what is deployed *and* what is verified.
+`standby_quorum_type` + `synchronous_standby_num_sync` +
+`synchronous_standby_application_names`. Both the deployment and the assertions
+below derive from that single declaration, so changing the quorum in
+`vars.json` changes what is deployed *and* what is verified. The finished
+`synchronous_standby_names` string is left empty on purpose so that the role's
+generator, and the validation asserts that go with it, are exercised rather
+than bypassed.
 
 With `ANY 2 ("standby1", "standby2", "standby3")` the expected behaviour is:
 
@@ -69,13 +73,34 @@ def parse_sync_spec(spec):
 def expected_sync_spec():
     """
     The quorum requested by the test case, as declared in vars.json.
+
+    The case leaves `synchronous_standby_names` empty so the role has to build
+    the value from `standby_quorum_type`, `synchronous_standby_num_sync` and
+    `synchronous_standby_application_names`. Declaring the finished string
+    instead would take the literal branch in `primary_synchronous_param.yml`
+    and skip the generator and its validation asserts, so the expected value is
+    assembled here from the same fields the role reads.
+
+    A case that does pin the finished string is still honoured, so this helper
+    keeps working for any variant that wants to test the literal branch.
     """
     ansible_vars = load_ansible_vars()
 
-    assert 'synchronous_standby_names' in ansible_vars, \
-        "This test case must declare synchronous_standby_names in vars.json"
+    pinned = ansible_vars.get('synchronous_standby_names', '')
+    if pinned:
+        return parse_sync_spec(pinned)
 
-    return parse_sync_spec(ansible_vars['synchronous_standby_names'])
+    names = ansible_vars.get('synchronous_standby_application_names', [])
+
+    assert names, \
+        "This test case must declare either synchronous_standby_names or " \
+        "synchronous_standby_application_names in vars.json"
+
+    return (
+        ansible_vars.get('standby_quorum_type', 'ANY').upper(),
+        int(ansible_vars.get('synchronous_standby_num_sync', 1)),
+        names,
+    )
 
 
 def psql(host, query, database='postgres', timeout=None):
