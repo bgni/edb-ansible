@@ -18,7 +18,7 @@ services:
     - EDB_OS
     - ANSIBLE_CORE_VERSION="${ANSIBLE_CORE_VERSION:-2.13}"
     volumes:
-    - ../../..:/workspace:Z
+    - ../../..:/workspace:z
     command: "/workspace/tests/docker/exec-tests.sh"
   primary1-rocky8:
     privileged: true
@@ -28,7 +28,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace:Z
+    - .:/workspace:z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   pool1-rocky8:
@@ -39,7 +39,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace:Z
+    - .:/workspace:z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   primary1-rocky9:
@@ -50,7 +50,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace:Z
+    - .:/workspace:z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   pool1-rocky9:
@@ -61,7 +61,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace:Z
+    - .:/workspace:z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   primary1-almalinux8:
@@ -72,7 +72,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace:Z
+    - .:/workspace:z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   pool1-almalinux8:
@@ -83,7 +83,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace:Z
+    - .:/workspace:z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   primary1-centos7:
@@ -94,7 +94,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace:Z
+    - .:/workspace:z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   pool1-centos7:
@@ -105,7 +105,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace:Z
+    - .:/workspace:z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   primary1-oraclelinux7:
@@ -116,7 +116,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace:Z
+    - .:/workspace:z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   pool1-oraclelinux7:
@@ -127,7 +127,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace:Z
+    - .:/workspace:z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   primary1-ubuntu20:
@@ -138,7 +138,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace:Z
+    - .:/workspace:z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     tmpfs:
     - /run
@@ -153,7 +153,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace:Z
+    - .:/workspace:z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     tmpfs:
     - /run
@@ -168,7 +168,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace:Z
+    - .:/workspace:z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     tmpfs:
     - /run
@@ -183,7 +183,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace:Z
+    - .:/workspace:z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     tmpfs:
     - /run

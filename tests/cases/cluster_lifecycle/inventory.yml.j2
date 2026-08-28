@@ -1,0 +1,28 @@
+---
+# Four database nodes plus a repmgr witness. Names are stable and are what the
+# synchronous policy refers to, so the tests can assert on them exactly.
+all:
+  children:
+    primary:
+      hosts:
+        postgres01:
+          ansible_host: {{ inventory_vars['postgres01_ip'] }}
+          private_ip: {{ inventory_vars['postgres01_ip'] }}
+          replication_application_name: postgres01
+    standby:
+      hosts:
+{% for n in ['postgres02', 'postgres03', 'postgres04'] %}
+        {{ n }}:
+          ansible_host: {{ inventory_vars[n + '_ip'] }}
+          private_ip: {{ inventory_vars[n + '_ip'] }}
+          replication_application_name: {{ n }}
+          replication_type: synchronous
+          upstream_node_private_ip: {{ inventory_vars['postgres01_ip'] }}
+{% endfor %}
+    witness:
+      hosts:
+        witness1:
+          ansible_host: {{ inventory_vars['witness1_ip'] }}
+          private_ip: {{ inventory_vars['witness1_ip'] }}
+          init_dbserver: true
+          upstream_node_private_ip: {{ inventory_vars['postgres01_ip'] }}

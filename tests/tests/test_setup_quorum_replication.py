@@ -460,26 +460,12 @@ def test_setup_quorum_replication_commits_with_quorum_available():
     try:
         wait_for_streaming_standbys(primary, len(running))
 
-        # Start the commit in the background and observe the server blocking,
-        # rather than killing psql after a timeout and inferring it. A backend
-        # waiting for synchronous confirmation reports wait_event 'SyncRep'
-        # (wait_event_type 'IPC') -- confirmed against PostgreSQL 17, where
-        # pg_wait_events also lists a Client/WaitForStandbyConfirmation event
-        # that is *not* what a committing backend shows.
-        #
-        # Observing the wait directly is exact, needs no timeout, and avoids
-        # disconnecting a client mid-commit.
-        insert_row_in_background(primary, label)
+        # Enough candidates remain, so this must commit normally.
+        result = insert_row(primary, label)
 
-        assert wait_until(lambda: backend_waiting_on_syncrep(primary, label)), \
-            "The commit did not enter a SyncRep wait with the quorum short; " \
-            "pg_stat_activity shows %s" % waiting_backends(primary)
-
-        # The transaction is flushed and marked committed locally before the
-        # wait, so it is already visible here. Postgres documents this: a
-        # cancelled wait still leaves the transaction committed.
-        assert wait_for_row(primary, label), \
-            "The blocked transaction is not visible on the primary"
+        assert result.rc == 0, \
+            "Commit did not go through with the quorum still available: %s" \
+            % (result.stdout + result.stderr).strip()
     finally:
         for name, host in stopped:
             systemctl(host, 'start')
@@ -518,11 +504,20 @@ def test_setup_quorum_replication_blocks_without_quorum():
     try:
         wait_for_streaming_standbys(primary, len(running))
 
-        result = insert_row(primary, label, timeout=BLOCKED_COMMIT_TIMEOUT)
+        # Observe the server blocking rather than killing psql after a timeout
+        # and inferring it from exit code 124. A backend waiting for
+        # synchronous confirmation reports wait_event 'SyncRep' with
+        # wait_event_type 'IPC' -- confirmed against a real PostgreSQL 17.
+        # pg_wait_events also lists Client/WaitForStandbyConfirmation, which is
+        # not what a committing backend shows.
+        #
+        # This is exact, needs no timeout, and does not disconnect a client
+        # mid-commit.
+        insert_row_in_background(primary, label)
 
-        assert result.rc == TIMEOUT_EXIT_CODE, \
-            "Commit returned with rc=%d instead of waiting for the quorum: %s" \
-            % (result.rc, (result.stdout + result.stderr).strip())
+        assert wait_until(lambda: backend_waiting_on_syncrep(primary, label)), \
+            "The commit did not enter a SyncRep wait one candidate short of " \
+            "the quorum; pg_stat_activity shows %s" % waiting_backends(primary)
 
         # Waiting for the quorum happens after the commit is flushed locally,
         # so the row is already visible on the primary.

@@ -1,0 +1,11 @@
+{
+  "_comment": "Phase 1 input. The cluster is provisioned WITHOUT the final synchronous policy, so that phase 2 has a real change to apply. Deploying straight to the target value would leave the reconfiguration path untested.",
+  "use_hostname": false,
+  "pg_data": "/opt/pgdata",
+  "pg_wal": "/opt/pgwal",
+  "pg_ssl": false,
+  "synchronous_standby_names": "",
+  "synchronous_standby_application_names": ["postgres02"],
+  "synchronous_standby_num_sync": 1,
+  "standby_quorum_type": "ANY"
+}

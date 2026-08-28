@@ -8,3 +8,4 @@
 cases/*/inventory.yml
 cases/*/certs/
 cases/*/edb_devops-*.tar.gz
+cases/*/results/
