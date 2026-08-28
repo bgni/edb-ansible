@@ -170,7 +170,10 @@
     fail_msg: "Configuration parameter {{ parameter.name }} was not updated correctly."
     success_msg: "Configuration parameter {{ parameter.name }} was updated correctly."
   when: pg_postgres_conf_params|length > 0
-  loop: "{{ _pg_postgres_conf_params }}"
+  # Ansible builds the loop before evaluating when:, so the |length guard
+  # above cannot protect this. default([], true) also turns an empty
+  # string into an empty list.
+  loop: "{{ _pg_postgres_conf_params | default([], true) }}"
   loop_control:
     loop_var: parameter
     extended: true

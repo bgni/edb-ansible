@@ -1,5 +1,27 @@
-ansible-tester-up:
-	docker compose up ansible-tester --force-recreate --build --abort-on-container-exit --exit-code-from ansible-tester
+# Exported, not just assigned. Without the export this is only a make variable:
+# the recipes below use it, but the Python helpers in tests/scripts see nothing
+# in the environment and fall back to their own auto-detection, which prefers
+# podman. On a host with both installed -- a GitHub Actions runner, for
+# instance -- make then brings the containers up with docker while
+# build-inventory.py and prep-containers.py look for them with podman, and
+# `compose ps -q` fails against a socket nothing is listening on:
+#
+#   Cannot connect to the Docker daemon at unix:///run/user/1001/podman/podman.sock
+#
+# One variable, one engine, both layers.
+CONTAINER_ENGINE ?= docker
+export CONTAINER_ENGINE
+COMPOSE := $(CONTAINER_ENGINE) compose
+
+# The tester installs the collection from the tarball built at the repository
+# root, so rebuild it first. Without this, a re-run after editing a role
+# silently tests the previous build -- the deploy looks fine and the results
+# are meaningless.
+collection-build:
+	$(MAKE) -C ../../.. build
+
+ansible-tester-up: collection-build
+	$(COMPOSE) up ansible-tester --force-recreate --build --abort-on-container-exit --exit-code-from ansible-tester
 
 post-build:
 	python3 ../../scripts/ssh-keygen.py --ssh-dir .ssh
@@ -13,6 +35,7 @@ centos8: export EDB_OS=centos8
 rocky8: export EDB_OS=rocky8
 rocky9: export EDB_OS=rocky9
 rhel8: export EDB_OS=rhel8
+rhel9: export EDB_OS=rhel9
 almalinux8: export EDB_OS=almalinux8
 debian9: export EDB_OS=debian9
 debian10: export EDB_OS=debian10
@@ -29,6 +52,7 @@ centos8: build-centos8 post-build ansible-tester-up
 rocky8: build-rocky8 post-build ansible-tester-up
 rocky9: build-rocky9 post-build ansible-tester-up
 rhel8: build-rhel8 post-build ansible-tester-up
+rhel9: build-rhel9 post-build ansible-tester-up
 almalinux8: build-almalinux8 post-build ansible-tester-up
 debian9: build-debian9 post-build ansible-tester-up
 debian10: build-debian10 post-build ansible-tester-up
@@ -43,4 +67,4 @@ oraclelinux9: build-oraclelinux9 post-build ansible-tester-up
 clean:
 	rm -rf ./.ssh
 	rm -f ./inventory.yml
-	docker compose rm -s -f
+	$(COMPOSE) rm -s -f

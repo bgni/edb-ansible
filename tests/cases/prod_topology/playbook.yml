@@ -1,0 +1,135 @@
+---
+# Deploys the production-shaped topology the source reviews describe:
+# PostgreSQL 17 on RHEL 9, one primary and three standbys under quorum
+# synchronous replication, a repmgr witness, pgBackRest, and an HAProxy client
+# gate fed by the postgres-cluster-xinetd health endpoint.
+#
+# TLS is issued up front by a local CA standing in for the deployment's ACME
+# server, and the cluster is configured for client-certificate (mTLS)
+# authentication through an Ansible-managed identity map.
+
+- hosts: localhost
+  connection: local
+  name: Issue the test PKI
+  gather_facts: false
+
+  vars:
+    tls_server_nodes: "{{ groups['primary'] + groups['standby'] + groups['witness'] }}"
+
+  tasks:
+    - name: Issue the CA, server and client certificates
+      ansible.builtin.import_tasks: issue_certs.yml
+
+- hosts: all
+  name: Production-shaped cluster deployment
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+
+  collections:
+    - edb_devops.edb_postgres
+
+  pre_tasks:
+    - name: Initialize the user defined variables
+      ansible.builtin.set_fact:
+        disable_logging: false
+
+    # Hand the externally issued certificates to the collection. init_dbserver
+    # copies whatever these point at into PGDATA and skips its own sslutils
+    # generation for each file that already exists.
+    - name: Point the SSL variables at the issued certificates
+      ansible.builtin.set_fact:
+        pg_ssl_cert_file: "{{ tls_dir }}/{{ inventory_hostname }}.crt"
+        pg_ssl_key_file: "{{ tls_dir }}/{{ inventory_hostname }}.key"
+        pg_ssl_ca_file: "{{ tls_dir }}/ca.crt"
+        pg_ssl_crl_file: "{{ tls_dir }}/root.crl"
+      when: inventory_hostname in (groups['primary'] + groups['standby'] + groups['witness'])
+
+  roles:
+    - role: setup_repo
+      when: "'setup_repo' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: install_dbserver
+      when: "'install_dbserver' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: init_dbserver
+      when: "'init_dbserver' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: setup_replication
+      when: "'setup_replication' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: setup_repmgr
+      when: "'setup_repmgr' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: setup_pgbackrestserver
+      when: "'setup_pgbackrestserver' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: setup_pgbackrest
+      when: "'setup_pgbackrest' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: manage_dbserver
+      when: "'manage_dbserver' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+
+# The health endpoint HAProxy probes. postgres-cluster-xinetd is not in the
+# supported_roles map, so it cannot be gated the way the roles above are and
+# has to be targeted explicitly -- which is finding EDB-13 in practice.
+- hosts: primary,standby
+  name: Health-check endpoint for the HAProxy gate
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+
+  collections:
+    - edb_devops.edb_postgres
+
+  roles:
+    - role: postgres-cluster-xinetd
+
+- hosts: proxy
+  name: HAProxy client gate
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+
+  collections:
+    - edb_devops.edb_postgres
+
+  roles:
+    - role: setup_haproxy
+      when: "'setup_haproxy' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+
+# Client-certificate authentication, applied to every promotion-capable node.
+#
+# The identity map and the HBA rule have to exist on the standbys too, not just
+# the primary: after a promotion the new primary must already accept the same
+# client certificates. That is the auth-side equivalent of the promotion-ready
+# durability policy in EDB-03, and it is what
+# test_prod_topology_mtls.py checks after switching primary.
+- hosts: primary,standby
+  name: Client certificate authentication
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+
+  collections:
+    - edb_devops.edb_postgres
+
+  tasks:
+    - name: Distribute the client CA to the database nodes
+      ansible.builtin.include_role:
+        name: manage_dbserver
+      vars:
+        # This play only manages roles, the identity map and the HBA. Passing
+        # an empty parameter list explicitly keeps it from depending on a
+        # pg_postgres_conf_params fact left behind by an earlier play, and
+        # stops it reapplying settings it does not own.
+        pg_postgres_conf_params: []
+        # Create the role the certificate maps to, define the map, and open an
+        # HBA rule that requires a verified client certificate for it.
+        pg_users:
+          - name: "{{ mtls_pg_user }}"
+        pg_ident_maps:
+          - mapname: "{{ mtls_map_name }}"
+            comment: "the issued client certificate authenticates as {{ mtls_pg_user }}"
+            system_username: "{{ tls_client_common_name }}"
+            pg_username: "{{ mtls_pg_user }}"
+        pg_hba_ip_addresses:
+          - contype: hostssl
+            users: "{{ mtls_pg_user }}"
+            source: "0.0.0.0/0"
+            databases: "all"
+            method: cert
+            options: "map={{ mtls_map_name }} clientcert=verify-full"

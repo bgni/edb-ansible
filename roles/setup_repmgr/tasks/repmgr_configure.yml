@@ -1,3 +1,36 @@
+# repmgr compares the data_directory in this file against the one PostgreSQL
+# reports, and `repmgr node check` returns CRITICAL when the two differ as
+# strings.
+#
+# They differ whenever pg_data is not the distribution default: init_dbserver
+# puts the cluster at pg_data and symlinks pg_default_data to it, and the
+# systemd unit starts PostgreSQL through that symlink. PostgreSQL then reports
+# the symlink path while pg_data holds the real one -- the same directory by
+# two names. Asking the running server settles it without having to reason
+# about which name applies.
+- name: Get the data directory as Postgres reports it
+  community.postgresql.postgresql_query:
+    login_user: "{{ pg_owner }}"
+    port: "{{ pg_port }}"
+    login_unix_socket: "{{ pg_unix_socket_directories[0] }}"
+    query: "show data_directory;"
+    db: "{{ pg_database }}"
+  become: true
+  become_user: "{{ pg_owner }}"
+  register: _repmgr_data_directory
+  failed_when: false
+  changed_when: false
+  no_log: "{{ disable_logging }}"
+
+- name: Set the data directory used in repmgr.conf
+  ansible.builtin.set_fact:
+    _repmgr_pg_data: >-
+      {{
+        _repmgr_data_directory.query_result[0].data_directory
+        if (_repmgr_data_directory.query_result | default([]) | length > 0)
+        else pg_data
+      }}
+
 - name: Write repmgr.conf
   ansible.builtin.template:
     src: repmgr.conf.j2

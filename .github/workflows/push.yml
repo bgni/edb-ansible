@@ -1,144 +1,71 @@
 name: edb-ansible testing
 
+# Scoped to the deployment this fork actually runs: PostgreSQL 17 on RHEL 9,
+# with pgBackRest, repmgr and HAProxy. Components we do not deploy -- pgBouncer,
+# pgPool-II, EFM, Patroni, PEM, Barman, PGD, CloudNativePG and the DBT-2/3/7 and
+# HammerDB benchmark harnesses -- are not tested here, and neither is any
+# PostgreSQL major version below 17 or any OS other than RHEL 9.
+#
+# Those roles and their test cases still exist in the tree and can be run by
+# hand (`make -C tests/cases/<case> <os>`); they are simply not automated.
+#
+# The heavier cluster cases live in their own workflows:
+#   pg17-rhel9-quorum-replication.yml  -- four node ANY 2 quorum, on push
+#   prod-topology.yml                  -- full stack + witness, manual dispatch
+
 on: [push, pull_request]
 
+env:
+  # Pinned explicitly rather than left to auto-detection. GitHub runners have
+  # both docker and podman installed, and the harness prefers podman when no
+  # engine is named -- but only docker has a working socket here.
+  CONTAINER_ENGINE: docker
+  EDB_PG_TYPE: PG
+  EDB_PG_VERSION: '17'
+  # PostgreSQL comes from the PGDG repositories, so no EDB repository
+  # credentials are needed.
+  EDB_ENABLE_REPO: 'false'
+  ANSIBLE_CORE_VERSION: '2.15'
+
 jobs:
-  build:
-    runs-on: ubuntu-20.04
+  findings:
+    runs-on: ubuntu-22.04
+    name: Source-review findings have not drifted
+    steps:
+      - uses: actions/checkout@v4
+      # Static analysis only: no containers, no cluster, a few seconds. It
+      # compares every published source-review finding against the tree and
+      # fails if any of them changed state, so a fixed finding cannot regress
+      # unnoticed and a new fix cannot land without being recorded.
+      - run: python3 tests/findings/check_findings.py --check
+
+  lint:
+    runs-on: ubuntu-22.04
     name: Execute ansible-lint
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - run: |
           docker run --rm -v $(pwd):/data cytopia/ansible-lint playbook.yml
-  setup-repo:
-    runs-on: ubuntu-20.04
-    name: Execute setup_repo tests for PostgreSQL 14 on RockyLinux8
-    steps:
-      - uses: actions/checkout@v2
-      - run: sudo apt install python3-pip -y
-      - run: sudo pip3 install ansible-core
-      - run: make
-      - run: ANSIBLE_CORE_VERSION=2.14 EDB_PG_TYPE=PG EDB_PG_VERSION=14 EDB_ENABLE_REPO=false make -C tests/cases/setup_repo rocky8
-  install-dbserver:
-    runs-on: ubuntu-20.04
-    name: Execute install_dbserver tests for PostgreSQL 14 on RockyLinux8
-    steps:
-      - uses: actions/checkout@v2
-      - run: sudo apt install python3-pip -y
-      - run: sudo pip3 install ansible-core
-      - run: make
-      - run: ANSIBLE_CORE_VERSION=2.14 EDB_PG_TYPE=PG EDB_PG_VERSION=14 EDB_ENABLE_REPO=false make -C tests/cases/install_dbserver rocky8
-  initdb-dbserver:
-    runs-on: ubuntu-20.04
-    name: Execute init_dbserver tests for PostgreSQL 14 on RockyLinux8
-    steps:
-      - uses: actions/checkout@v2
-      - run: sudo apt install python3-pip -y
-      - run: sudo pip3 install ansible-core
-      - run: make
-      - run: ANSIBLE_CORE_VERSION=2.14 EDB_PG_TYPE=PG EDB_PG_VERSION=14 EDB_ENABLE_REPO=false make -C tests/cases/init_dbserver rocky8
+
   setup-replication:
-    runs-on: ubuntu-20.04
-    name: Execute setup_replication tests for PostgreSQL 14 on RockyLinux8
+    # Pinned: the test containers run systemd, which is sensitive to the
+    # runner's cgroup layout.
+    runs-on: ubuntu-22.04
+    name: Execute setup_replication tests for PostgreSQL 17 on RHEL 9
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v2
-      - run: sudo apt install python3-pip -y
-      - run: sudo pip3 install ansible-core
-      - run: make
-      - run: ANSIBLE_CORE_VERSION=2.14 EDB_PG_TYPE=PG EDB_PG_VERSION=14 EDB_ENABLE_REPO=false make -C tests/cases/setup_replication rocky8
-  manage-dbserver:
-    runs-on: ubuntu-20.04
-    name: Execute manage_dbserver tests for PostgreSQL 14 on RockyLinux8
-    steps:
-      - uses: actions/checkout@v2
-      - run: sudo apt install python3-pip -y
-      - run: sudo pip3 install ansible-core
-      - run: make
-      - run: ANSIBLE_CORE_VERSION=2.14 EDB_PG_TYPE=PG EDB_PG_VERSION=14 EDB_ENABLE_REPO=false make -C tests/cases/manage_dbserver rocky8
-  setup-pgpool2:
-    runs-on: ubuntu-20.04
-    name: Execute setup_pgpool2 tests for PostgreSQL 14 on RockyLinux8
-    steps:
-      - uses: actions/checkout@v2
-      - run: sudo apt install python3-pip -y
-      - run: sudo pip3 install ansible-core
-      - run: make
-      - run: ANSIBLE_CORE_VERSION=2.14 EDB_PG_TYPE=PG EDB_PG_VERSION=14 EDB_ENABLE_REPO=false make -C tests/cases/setup_pgpool2 rocky8
-  manage-pgpool2:
-    runs-on: ubuntu-20.04
-    name: Execute manage_pgpool2 tests for PostgreSQL 14 on RockyLinux8
-    steps:
-      - uses: actions/checkout@v2
-      - run: sudo apt install python3-pip -y
-      - run: sudo pip3 install ansible-core
-      - run: make
-      - run: ANSIBLE_CORE_VERSION=2.14 EDB_PG_TYPE=PG EDB_PG_VERSION=14 EDB_ENABLE_REPO=false make -C tests/cases/manage_pgpool2 rocky8
-  setup-pgbouncer:
-    runs-on: ubuntu-20.04
-    name: Execute setup_pgbouncer tests for PostgreSQL 14 on RockyLinux8
-    steps:
-      - uses: actions/checkout@v2
-      - run: sudo apt install python3-pip -y
-      - run: sudo pip3 install ansible-core
-      - run: make
-      - run: ANSIBLE_CORE_VERSION=2.14 EDB_PG_TYPE=PG EDB_PG_VERSION=14 EDB_ENABLE_REPO=false make -C tests/cases/setup_pgbouncer rocky8
-  manage-pgbouncer:
-    runs-on: ubuntu-20.04
-    name: Execute manage_pgbouncer tests for PostgreSQL 14 on RockyLinux8
-    steps:
-      - uses: actions/checkout@v2
-      - run: sudo apt install python3-pip -y
-      - run: sudo pip3 install ansible-core
-      - run: make
-      - run: ANSIBLE_CORE_VERSION=2.14 EDB_PG_TYPE=PG EDB_PG_VERSION=14 EDB_ENABLE_REPO=false make -C tests/cases/manage_pgbouncer rocky8
-  setup-repmgr:
-    runs-on: ubuntu-20.04
-    name: Execute setup_repmgr tests for PostgreSQL 14 on RockyLinux8
-    steps:
-      - uses: actions/checkout@v2
-      - run: sudo apt install python3-pip -y
-      - run: sudo pip3 install ansible-core
-      - run: make
-      - run: ANSIBLE_CORE_VERSION=2.14 EDB_PG_TYPE=PG EDB_PG_VERSION=14 EDB_ENABLE_REPO=false make -C tests/cases/setup_repmgr rocky8
-  setup-dbt2-driver:
-    runs-on: ubuntu-20.04
-    name: Execute setup_dbt2_driver tests for PostgreSQL 14 on RockyLinux8
-    steps:
-      - uses: actions/checkout@v2
-      - run: sudo apt install python3-pip -y
-      - run: sudo pip3 install ansible-core
-      - run: make
-      - run: ANSIBLE_CORE_VERSION=2.14 EDB_PG_TYPE=PG EDB_PG_VERSION=14 EDB_ENABLE_REPO=false make -C tests/cases/setup_dbt2_driver rocky8
-  setup-dbt2-client:
-    runs-on: ubuntu-20.04
-    name: Execute setup_dbt2_client tests for PostgreSQL 14 on RockyLinux8
-    steps:
-      - uses: actions/checkout@v2
-      - run: sudo apt install python3-pip -y
-      - run: sudo pip3 install ansible-core
-      - run: make
-      - run: ANSIBLE_CORE_VERSION=2.14 EDB_PG_TYPE=PG EDB_PG_VERSION=14 EDB_ENABLE_REPO=false make -C tests/cases/setup_dbt2_client rocky8
-  setup-dbt2:
-    runs-on: ubuntu-20.04
-    name: Execute setup_dbt2 tests for PostgreSQL 14 on RockyLinux8
-    steps:
-      - uses: actions/checkout@v2
-      - run: sudo apt install ansible -y
-      - run: make
-      - run: ANSIBLE_CORE_VERSION=2.14 EDB_PG_TYPE=PG EDB_PG_VERSION=14 EDB_ENABLE_REPO=false make -C tests/cases/setup_dbt2 rocky8
-  setup-dbt3:
-    runs-on: ubuntu-20.04
-    name: Execute setup_dbt3 tests for PostgreSQL 14 on RockyLinux8
-    steps:
-      - uses: actions/checkout@v2
-      - run: sudo apt install ansible -y
-      - run: make
-      - run: ANSIBLE_CORE_VERSION=2.14 EDB_PG_TYPE=PG EDB_PG_VERSION=14 EDB_ENABLE_REPO=false make -C tests/cases/setup_dbt3 rocky8
-  setup-dbt7:
-    runs-on: ubuntu-20.04
-    name: Execute setup_dbt7 tests for PostgreSQL 14 on RockyLinux8
-    steps:
-      - uses: actions/checkout@v2
-      - run: sudo apt install ansible -y
-      - run: make
-      - run: ANSIBLE_CORE_VERSION=2.14 EDB_PG_TYPE=PG EDB_PG_VERSION=14 EDB_ENABLE_REPO=false make -C tests/cases/setup_dbt7 rocky8
+      - uses: actions/checkout@v4
+      - name: Install the test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          # ansible-core brings in the jinja2 and pyyaml modules used by the
+          # scripts that template the inventory.
+          sudo pip3 install "ansible-core==${ANSIBLE_CORE_VERSION}"
+      - name: Build the collection tarball
+        run: make
+      - name: Run the setup_replication test case
+        run: make -C tests/cases/setup_replication rhel9
+      - name: Tear down the containers
+        if: always()
+        run: make -C tests/cases/setup_replication clean

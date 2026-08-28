@@ -101,7 +101,11 @@
     path: "{{ pg_user_home + '/.ssh/known_hosts' }}"
     name: "{{ _ssh_pg_keyname }}"
     key: "{{ _item }}"
-  with_items: "{{ _primary_ssh_keyscan_output.stdout_lines }}"
+  # ssh-keyscan writes a "# <host>:<port> SSH-2.0-..." banner per host, and
+  # OpenSSH 8.7 and later put those on stdout. Feeding them to known_hosts
+  # fails with "Host parameter does not match hashed host field in supplied
+  # key", so keep only real key lines.
+  with_items: "{{ _primary_ssh_keyscan_output.stdout_lines | reject('match', '^\\s*(#|$)') | list }}"
   loop_control:
     loop_var: _item
   delegate_to: "{{ _primary_server_inventory_hostname }}"
@@ -120,7 +124,11 @@
     path: "{{ pg_user_home + '/.ssh/known_hosts' }}"
     name: "{{ _ssh_primary_keyname }}"
     key: "{{ _item }}"
-  with_items: "{{ _pg_ssh_keyscan_output.stdout_lines }}"
+  # ssh-keyscan writes a "# <host>:<port> SSH-2.0-..." banner per host, and
+  # OpenSSH 8.7 and later put those on stdout. Feeding them to known_hosts
+  # fails with "Host parameter does not match hashed host field in supplied
+  # key", so keep only real key lines.
+  with_items: "{{ _pg_ssh_keyscan_output.stdout_lines | reject('match', '^\\s*(#|$)') | list }}"
   loop_control:
     loop_var: _item
   become: true

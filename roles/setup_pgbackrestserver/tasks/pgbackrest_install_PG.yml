@@ -12,7 +12,14 @@
     executable: /bin/bash
   register: disable_builtin_postgres
   changed_when: disable_builtin_postgres.rc == 0
-  failed_when: disable_builtin_postgres.rc != 0
+  # A base image that ships no postgresql module stream -- UBI, for one --
+  # reports "missing groups or modules". There is nothing to disable in that
+  # case, so it is a success, not a failure. Without this the task prints a
+  # red fatal on every RHEL run that ignore_errors then swallows, which
+  # trains operators to scroll past genuine fatals.
+  failed_when:
+    - disable_builtin_postgres.rc != 0
+    - "'missing groups or modules' not in disable_builtin_postgres.stderr"
   ignore_errors: true
   become: true
   when: ansible_os_family == 'RedHat'

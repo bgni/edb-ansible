@@ -1,0 +1,27 @@
+{
+  "_comment": "Known state of each source-review finding in this tree. Regenerate with: python3 tests/findings/check_findings.py --update. A diff here is a real change in the collection: either a finding was fixed, or a fix regressed.",
+  "findings": {
+    "EDB-01": "PRESENT",
+    "EDB-02": "PRESENT",
+    "EDB-03": "FIXED",
+    "EDB-04": "PARTIAL",
+    "EDB-05": "PRESENT",
+    "EDB-06": "PRESENT",
+    "EDB-07": "PRESENT",
+    "EDB-08": "PRESENT",
+    "EDB-09": "PRESENT",
+    "EDB-10": "PRESENT",
+    "EDB-11": "PARTIAL",
+    "EDB-12": "PRESENT",
+    "EDB-13": "PARTIAL",
+    "EDB-14": "FIXED",
+    "EDB-15": "PARTIAL",
+    "EDB-16": "PRESENT",
+    "EDB-17": "PRESENT",
+    "EDB-18": "PRESENT",
+    "LOCAL-01": "PRESENT",
+    "TLS-01": "PRESENT",
+    "TLS-02": "PARTIAL",
+    "TLS-03": "PRESENT"
+  }
+}

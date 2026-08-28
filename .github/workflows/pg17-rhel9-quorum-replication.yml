@@ -1,0 +1,74 @@
+name: PostgreSQL 17 on RHEL 9.7
+
+# Deploys a four node cluster (one primary, three standbys) with quorum based
+# synchronous replication -- ANY 2 of the three standbys must confirm a commit
+# -- and checks that Postgres 17 works and that the quorum behaves as expected
+# when standbys go away and come back.
+#
+# The cluster nodes are RedHat Universal Base Images, which are redistributable
+# and need no subscription. The tag is pinned to the RHEL minor version under
+# test.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      rhel9_image_tag:
+        description: 'RHEL 9 UBI image tag to test against'
+        required: false
+        default: '9.7'
+
+env:
+  # Pinned explicitly rather than left to auto-detection. GitHub runners have
+  # both docker and podman installed, and the harness prefers podman when no
+  # engine is named -- but only docker has a working socket here.
+  CONTAINER_ENGINE: docker
+  EDB_PG_TYPE: PG
+  EDB_PG_VERSION: '17'
+  # PostgreSQL is installed from the PGDG repositories, so no EDB repository
+  # credentials are needed.
+  EDB_ENABLE_REPO: 'false'
+  ANSIBLE_CORE_VERSION: '2.15'
+  RHEL9_IMAGE_TAG: ${{ github.event.inputs.rhel9_image_tag || '9.7' }}
+
+jobs:
+  setup-quorum-replication:
+    # Pinned: the test containers run systemd, which is sensitive to the
+    # runner's cgroup layout.
+    runs-on: ubuntu-22.04
+    name: Four node ANY 2 quorum replication, PostgreSQL 17 on RHEL 9.7
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip jq
+          # ansible-core brings in the jinja2 and pyyaml modules used by the
+          # scripts that template the inventory.
+          sudo pip3 install "ansible-core==${ANSIBLE_CORE_VERSION}"
+
+      - name: Build the collection tarball
+        run: make
+
+      - name: Run the setup_quorum_replication test case
+        run: make -C tests/cases/setup_quorum_replication rhel9
+
+      - name: Collect the Postgres logs
+        if: failure()
+        working-directory: tests/cases/setup_quorum_replication
+        run: |
+          for service in primary1-rhel9 standby1-rhel9 standby2-rhel9 standby3-rhel9; do
+            echo "::group::${service}"
+            docker compose exec -T "${service}" \
+              journalctl -u "postgresql-${EDB_PG_VERSION}" --no-pager -n 200 || true
+            echo "::endgroup::"
+          done
+
+      - name: Tear down the containers
+        if: always()
+        run: make -C tests/cases/setup_quorum_replication clean

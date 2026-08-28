@@ -22,7 +22,12 @@ use_validation: true
 
 pass_dir: "~/.edb"
 passfile: ""
-#pg_postgres_conf_params: []
+# Must have a real default, not a commented-out one: manage_postgres_params.yml
+# and validate_manage_dbserver.yml both test `pg_postgres_conf_params|length`,
+# and Ansible errors on an undefined name in a conditional rather than treating
+# it as falsy. Leaving this commented meant the role could not run at all
+# unless the caller happened to define it.
+pg_postgres_conf_params: []
 # Example:
 # - name: listen_addresses
 #   value: "*"
@@ -30,6 +35,33 @@ passfile: ""
 disable_logging: true
 
 pg_hba_ip_addresses: []
+# Example, granting a client certificate holder access as an application role:
+# - contype: hostssl
+#   users: "app_user"
+#   source: "10.0.0.0/24"
+#   databases: "all"
+#   method: "cert"
+#   options: "map=mtls clientcert=verify-full"
+
+# PostgreSQL identity maps, rendered in full into an Ansible-managed file that
+# pg_ident.conf includes. The distribution's pg_ident.conf is never rewritten;
+# it only gains one include line.
+#
+# For client-certificate (mTLS) authentication the system user name is the
+# certificate's Common Name, and an HBA line using method `cert` refers to a
+# map here by `options: "map=<mapname>"`.
+#
+# Example:
+# pg_ident_maps:
+#   - mapname: mtls
+#     system_username: "app_client"
+#     pg_username: "app_user"
+#   - mapname: mtls
+#     comment: "any host certificate in the internal domain maps to its CN"
+#     system_username: "/^(.*)\\.internal\\.example\\.com$"
+#     pg_username: "\\1"
+pg_ident_maps: []
+pg_ident_managed_filename: pg_ident_ansible.conf
 pg_slots: []
 pg_extensions: []
 pg_grant_privileges: []

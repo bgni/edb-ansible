@@ -75,6 +75,34 @@ def get_hosts(group_name):
     return HOSTS
 
 
+def get_named_hosts(group_name):
+    """
+    Returns a list of (inventory_hostname, testinfra host instance) tuples,
+    based on Ansible group name.
+
+    Postgres identifies streaming standbys by their application_name, which the
+    setup_replication role sets to the inventory hostname. Tests inspecting
+    pg_stat_replication therefore need the names as well as the hosts.
+    """
+    inventory_data = load_inventory()
+    children = inventory_data['all']['children']
+
+    if group_name not in children:
+        return []
+
+    nodes = []
+    for host, attrs in children[group_name]['hosts'].items():
+        nodes.append((
+            host,
+            testinfra.get_host(
+                'paramiko://%s@%s:22' % (EDB_SSH_USER, attrs['ansible_host']),
+                ssh_identity_file=EDB_SSH_KEY,
+                ssh_config=EDB_SSH_CONFIG,
+            )
+        ))
+    return nodes
+
+
 def get_os():
     return EDB_OS
 
@@ -89,8 +117,10 @@ def get_pg_version():
 
 def os_family():
     if (get_os().startswith('centos') or get_os().startswith('rocky')
+        or get_os().startswith('rhel')
         or get_os().startswith('almalinux')
-        or get_os().startswith('oraclelinux')):
+        or get_os().startswith('oraclelinux')
+        or get_os().startswith('rhel')):
         return 'RedHat'
     elif (get_os().startswith('debian') or get_os().startswith('ubuntu')):
         return 'Debian'
@@ -166,6 +196,30 @@ def get_dbt2_driver():
 
 def get_dbt2_client():
     return get_hosts('dbt2_client')
+
+
+def get_pg_owner():
+    return 'enterprisedb' if get_pg_type() == 'EPAS' else 'postgres'
+
+
+def get_pg_service_name():
+    """
+    Returns the systemd unit name of the Postgres instance, mirroring the
+    edb_devops.edb_postgres.pg_service lookup plugin for the 'main' instance.
+    """
+    pg_type = get_pg_type()
+    pg_version = get_pg_version()
+
+    if os_family() == 'RedHat':
+        if pg_type == 'PG':
+            return 'postgresql-%s' % pg_version
+        elif pg_type == 'EPAS':
+            return 'edb-as-%s' % pg_version
+    elif os_family() == 'Debian':
+        if pg_type == 'PG':
+            return 'postgresql@%s-main' % pg_version
+        elif pg_type == 'EPAS':
+            return 'edb-as@%s-main' % pg_version
 
 
 def get_pg_unix_socket_dir():
