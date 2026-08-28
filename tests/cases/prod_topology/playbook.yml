@@ -46,10 +46,19 @@
       when: inventory_hostname in (groups['primary'] + groups['standby'] + groups['witness'])
 
   roles:
+    # setup_repo and install_dbserver are the only roles here that need a
+    # package repository. With `preinstalled` set they are skipped, and the run
+    # needs no mirror, no Artifactory and no internet -- see
+    # tests/docker/Dockerfile.rhel9-preinstalled. Everything below them is
+    # configuration, which is where most changes land.
     - role: setup_repo
-      when: "'setup_repo' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+      when:
+        - not (preinstalled | default(false) | bool)
+        - "'setup_repo' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
     - role: install_dbserver
-      when: "'install_dbserver' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+      when:
+        - not (preinstalled | default(false) | bool)
+        - "'install_dbserver' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
     - role: init_dbserver
       when: "'init_dbserver' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
     - role: setup_replication

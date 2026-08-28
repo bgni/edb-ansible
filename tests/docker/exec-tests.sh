@@ -29,6 +29,7 @@ if [[ "${SKIP_PLAYBOOK:-false}" != "true" ]]; then
 		--extra-vars "pg_version=${EDB_PG_VERSION}" \
 		--extra-vars "@${CASE_VARS}" \
 		--extra-vars "ansible_core_version=${ANSIBLE_CORE_VERSION}" \
+		--extra-vars "preinstalled=${PREINSTALLED:-false}" \
 		--private-key /root/.ssh/id_rsa \
 		/workspace/tests/cases/${CASE_NAME}/playbook.yml
 fi

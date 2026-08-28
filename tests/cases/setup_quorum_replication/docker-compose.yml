@@ -27,6 +27,8 @@ services:
     # cluster that is already deployed.
     - SKIP_PLAYBOOK=${SKIP_PLAYBOOK:-false}
     - PYTEST_ARGS=${PYTEST_ARGS:-}
+    # Offline mode: skip the roles that need a package repository.
+    - PREINSTALLED=${PREINSTALLED:-false}
     volumes:
     - ../../..:/workspace
     command: "/workspace/tests/docker/exec-tests.sh"

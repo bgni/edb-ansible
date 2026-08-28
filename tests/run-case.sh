@@ -3,6 +3,7 @@
 # Run one test case without make.
 #
 #   tests/run-case.sh <case> [os]              run a case (os defaults to rhel9)
+#   tests/run-case.sh <case> [os] --preinstalled  offline: skip the install roles
 #   tests/run-case.sh <case> [os] --tests-only  re-run the tests only
 #   tests/run-case.sh <case> [os] --clean       tear the case down and exit
 #   tests/run-case.sh --list                    list the available cases
@@ -40,6 +41,18 @@
 # For an air-gapped run also set RHEL_BASE_IMAGE, TESTER_BASE_IMAGE,
 # YUM_BASEURL, PIP_INDEX_URL, APT_MIRROR and ANSIBLE_GALAXY_SERVER, and check
 # them first with tests/scripts/check-resources.py.
+#
+# --preinstalled runs with no package repository at all. It uses a node image
+# that already carries the whole package set and skips setup_repo and
+# install_dbserver, which are the only roles that fetch anything. Everything
+# that remains -- init_dbserver, replication, identity maps, HBA, the
+# synchronous policy, day two -- is configuration, which is where most changes
+# are. Build the image once where a repository is reachable:
+#
+#   docker build -f tests/docker/Dockerfile.rhel9-preinstalled \
+#       --build-arg pg_version=17 -t localhost/edb-ansible/rhel9-pg17:local tests/docker
+#
+# then point PREINSTALLED_IMAGE at it (defaults to that local tag).
 
 set -euo pipefail
 
@@ -75,10 +88,12 @@ shift || true
 
 CLEAN_ONLY=false
 TESTS_ONLY=false
+PREINSTALLED=false
 for arg in "$@"; do
     case "$arg" in
         --clean) CLEAN_ONLY=true ;;
         --tests-only) TESTS_ONLY=true ;;
+        --preinstalled) PREINSTALLED=true ;;
         *) die "unknown argument: $arg" ;;
     esac
 done
@@ -101,6 +116,14 @@ export EDB_PG_TYPE="${EDB_PG_TYPE:-PG}"
 export EDB_PG_VERSION="${EDB_PG_VERSION:-17}"
 export EDB_ENABLE_REPO="${EDB_ENABLE_REPO:-false}"
 export ANSIBLE_CORE_VERSION="${ANSIBLE_CORE_VERSION:-2.15}"
+
+# Offline mode: use the image that already has the packages, and tell the
+# playbook to skip the two roles that would otherwise reach a repository.
+export PREINSTALLED
+if [[ "${PREINSTALLED}" == true ]]; then
+    export PREINSTALLED_IMAGE="${PREINSTALLED_IMAGE:-localhost/edb-ansible/rhel9-pg17:local}"
+    export RHEL_BASE_IMAGE="${PREINSTALLED_IMAGE}"
+fi
 
 cd "${CASE_DIR}"
 
