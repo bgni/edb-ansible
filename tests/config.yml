@@ -578,3 +578,10 @@ cases:
     - rocky9
     - centos7
     - almalinux8
+  setup_quorum_replication:
+    pg_version:
+    - 17
+    pg_type:
+    - PG
+    os:
+    - rhel9

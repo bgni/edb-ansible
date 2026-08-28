@@ -1,0 +1,6 @@
+{
+  "use_hostname": false,
+  "pg_data": "/opt/pgdata",
+  "pg_wal": "/opt/pgwal",
+  "synchronous_standby_names": "ANY 2 (\"standby1\", \"standby2\", \"standby3\")"
+}

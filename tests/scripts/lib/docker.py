@@ -109,6 +109,10 @@ class DockerRHEL8Container(DockerCentosContainer):
     pass
 
 
+class DockerRHEL9Container(DockerCentosContainer):
+    pass
+
+
 class DockerAlmalinux8Container(DockerCentosContainer):
     pass
 
@@ -176,6 +180,8 @@ def DockerOSContainer(id, os):
         return DockerRocky9Container(id)
     elif os == 'rhel8':
         return DockerRHEL8Container(id)
+    elif os == 'rhel9':
+        return DockerRHEL9Container(id)
     elif os == 'almalinux8':
         return DockerAlmalinux8Container(id)
     elif os == 'debian9':

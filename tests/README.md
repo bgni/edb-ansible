@@ -42,6 +42,78 @@ create the docker infrastructure (`docker-compose.yml`) and the Ansible files
 (`inventory.yml` template, `playbook.yml`, and `vars.json`) needed to deploy
 the components related to the test case.
 
+## Test case: `setup_quorum_replication`
+
+This test case covers PostgreSQL 17 on RedHat Enterprise Linux 9.7, deployed as
+a four node cluster -- one primary and three standbys -- using quorum based
+synchronous replication.
+
+The quorum is declared once, in the test case `vars.json`:
+
+```json
+{
+  "synchronous_standby_names": "ANY 2 (\"standby1\", \"standby2\", \"standby3\")"
+}
+```
+
+The `setup_replication` role only derives `synchronous_standby_names` on its
+own when the variable is left empty, and it then requires *every* synchronous
+standby to confirm a commit. Setting the variable explicitly, as above, is what
+selects a quorum of two out of three.
+
+Both the deployment and the assertions read that single declaration, so
+changing the quorum in `vars.json` changes what is deployed *and* what is
+verified.
+
+The tests in `tests/test_setup_quorum_replication.py` check that:
+
+- the cluster has four nodes, all running the requested Postgres major version,
+  with one primary and three standbys in recovery;
+- the primary's `synchronous_standby_names` matches the requested quorum, and
+  the three standbys are reported as `quorum` members in `pg_stat_replication`;
+- a committed row reaches all three standbys;
+- stopping one standby still leaves two quorum candidates, so commits keep
+  going through, and the stopped standby catches up once restarted;
+- stopping two standbys leaves the primary one candidate short of the quorum,
+  so a commit blocks until a candidate comes back. The transaction is already
+  committed locally while it waits, which is what Postgres documents for
+  synchronous replication, and it reaches every standby once the quorum is
+  restored.
+
+Running it:
+
+```shell
+$ export EDB_PG_TYPE=PG
+$ export EDB_PG_VERSION=17
+$ export EDB_ENABLE_REPO=false
+$ export ANSIBLE_CORE_VERSION=2.15
+$ make -C cases/setup_quorum_replication rhel9
+```
+
+PostgreSQL comes from the PGDG repositories, so no EDB repository credentials
+are required.
+
+### About the RHEL 9 containers
+
+The `rhel9` containers are built from the RedHat Universal Base Image
+(`registry.access.redhat.com/ubi9/ubi-init`), which is redistributable and
+needs no subscription. The image tag is pinned to the RHEL minor version under
+test, and can be overridden:
+
+```shell
+$ RHEL9_IMAGE_TAG=9.6 make -C cases/setup_quorum_replication rhel9
+```
+
+Because the UBI has no access to the full RHEL repository set, the
+CodeReady Builder repository is not enabled on `RedHat9` -- the
+`setup_repo` role skips it there, expecting `subscription-manager` on a
+subscribed host.
+
+Unlike the older test cases, which bind mount `/sys/fs/cgroup` read-only and
+therefore only boot systemd on cgroup v1 hosts, this test case runs its
+containers in the host cgroup namespace with a writable cgroup mount. That
+works on both cgroup v1 and cgroup v2 hosts.
+
 ## Running the tests
 
 ### Prerequisites
