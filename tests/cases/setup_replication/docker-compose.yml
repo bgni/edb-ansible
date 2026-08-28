@@ -43,6 +43,9 @@ services:
     - EDB_ENABLE_REPO=${EDB_ENABLE_REPO:-true}
     - EDB_PG_TYPE
     - EDB_PG_VERSION
+    # Passed through so a small host can serialise dnf, which is the
+    # memory spike. Without this the container silently defaults to 10.
+    - ANSIBLE_FORKS=${ANSIBLE_FORKS:-10}
     - CASE_NAME=setup_replication
     - EDB_OS
     - ANSIBLE_CORE_VERSION="${ANSIBLE_CORE_VERSION:-2.13}"

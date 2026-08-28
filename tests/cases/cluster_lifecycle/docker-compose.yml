@@ -46,6 +46,9 @@ services:
     - EDB_OS
     - EDB_ENABLE_REPO=${EDB_ENABLE_REPO:-false}
     - ANSIBLE_CORE_VERSION="${ANSIBLE_CORE_VERSION:-2.15}"
+    # Passed through so a small host can serialise dnf, which is the
+    # memory spike. Without this the container silently defaults to 10.
+    - ANSIBLE_FORKS=${ANSIBLE_FORKS:-10}
     - CASE_NAME=cluster_lifecycle
     - LIFECYCLE_PHASES=${LIFECYCLE_PHASES:-provision,reconfigure,failover}
     - PREINSTALLED=${PREINSTALLED:-false}

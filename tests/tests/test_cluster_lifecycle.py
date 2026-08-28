@@ -31,6 +31,7 @@ against whichever node is promoted, and a survivor missing any acknowledged
 token is a failure of the procedure rather than something to tolerate.
 """
 
+import base64
 import re
 import time
 
@@ -144,37 +145,61 @@ def lsn_value(host, expr):
         return -1
 
 
-def start_writer(host, prefix, ledger_path='/tmp/acknowledged.txt'):
+WRITER_SCRIPT = '/tmp/lifecycle_writer.sh'
+WRITER_LEDGER = '/tmp/acknowledged.txt'
+
+
+def start_writer(host, prefix):
     """
     Start a writer that appends a token to a file only after its commit
     returned.
 
-    The file is the record of what was *acknowledged*: a token present there
-    was confirmed to a client, so it must survive the failover. A commit that
-    was still in flight when the primary died leaves no token, which is
-    correct -- its outcome is undefined and asserting on it would be wrong.
+    The script is written to the node as a file and shipped base64-encoded.
+    Inlining it collapsed through testinfra -> sudo -> sh -c: the nested quotes
+    around the SQL did not survive, the writer never ran, and the ledger came
+    back empty -- which reads as "nothing was acknowledged" rather than "the
+    writer was broken".
+
+    setsid detaches it so it outlives the SSH session that started it.
+
+    A token in the ledger was confirmed to a client, so it must survive the
+    failover. A commit still in flight when the primary dies leaves no token,
+    which is correct: its outcome is undefined and asserting on it would be
+    wrong.
     """
-    script = (
-        "i=0; while true; do "
-        "i=$((i+1)); "
-        "if psql -At -h %s -c \"INSERT INTO %s (token) VALUES ('%s-$i')\" "
-        "postgres >/dev/null 2>&1; then echo '%s-'$i >> %s; fi; "
-        "done"
-        % (get_pg_unix_socket_dir(), LEDGER_TABLE, prefix, prefix, ledger_path)
-    )
-    with host.sudo(get_pg_owner()):
-        host.run('rm -f %s' % ledger_path)
-        host.run("nohup sh -c \"%s\" >/dev/null 2>&1 &" % script)
+    script = """#!/bin/sh
+i=0
+while true; do
+  i=$((i+1))
+  if psql -At -h %s -c "INSERT INTO %s (token) VALUES ('%s-$i')" postgres >/dev/null 2>&1; then
+    echo "%s-$i" >> %s
+  fi
+done
+""" % (get_pg_unix_socket_dir(), LEDGER_TABLE, prefix, prefix, WRITER_LEDGER)
+
+    encoded = base64.b64encode(script.encode()).decode()
+    with host.sudo():
+        host.run('rm -f %s %s' % (WRITER_LEDGER, WRITER_SCRIPT))
+        host.run('echo %s | base64 -d > %s' % (encoded, WRITER_SCRIPT))
+        host.run('chmod 755 %s' % WRITER_SCRIPT)
+        host.run('touch %s && chown %s %s %s'
+                 % (WRITER_LEDGER, get_pg_owner(), WRITER_LEDGER, WRITER_SCRIPT))
+        host.run('setsid runuser -u %s -- %s </dev/null >/dev/null 2>&1 &'
+                 % (get_pg_owner(), WRITER_SCRIPT))
+
+    # Fail loudly here rather than letting an empty ledger look like data loss.
+    assert wait_until(lambda: len(acknowledged_tokens(host)) > 0, timeout=60), \
+        'the writer produced no acknowledged token in 60s; it did not start'
 
 
 def stop_writer(host):
     with host.sudo():
-        host.run("pkill -f 'INSERT INTO %s' || true" % LEDGER_TABLE)
+        host.run('pkill -f %s || true' % WRITER_SCRIPT)
 
 
-def acknowledged_tokens(host, ledger_path='/tmp/acknowledged.txt'):
-    with host.sudo(get_pg_owner()):
-        r = host.run('cat %s 2>/dev/null || true' % ledger_path)
+def acknowledged_tokens(host, ledger_path=None):
+    with host.sudo():
+        r = host.run('cat %s 2>/dev/null || true' % (ledger_path or WRITER_LEDGER))
     return [t for t in r.stdout.strip().split('\n') if t]
 
 
@@ -476,7 +501,7 @@ def failover():
     old_name, old_host = current_primary()
     ensure_ledger(old_host)
 
-    start_writer(old_host, 'ack')
+    start_writer(old_host, 'ack')      # asserts it actually started
     time.sleep(10)                     # let a meaningful number commit
 
     # Abrupt: SIGKILL the postmaster, no clean shutdown, writes in flight.
