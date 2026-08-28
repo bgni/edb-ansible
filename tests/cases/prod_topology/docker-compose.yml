@@ -15,6 +15,9 @@ x-rhel9-node: &rhel9-node
     dockerfile: Dockerfile.rhel9
     args:
       rhel9_image_tag: "${RHEL9_IMAGE_TAG:-9.7}"
+      RHEL_BASE_IMAGE: "${RHEL_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi-init:${RHEL9_IMAGE_TAG:-9.7}}"
+      YUM_BASEURL: "${YUM_BASEURL:-}"
+      YUM_GPGCHECK: "${YUM_GPGCHECK:-1}"
   cap_add:
     - SYS_ADMIN
   # systemd needs a writable cgroup tree rooted at the host hierarchy. The
@@ -36,6 +39,12 @@ services:
       dockerfile: Dockerfile.ansible-tester
       args:
         ansible_core_version: "${ANSIBLE_CORE_VERSION}"
+        TESTER_BASE_IMAGE: "${TESTER_BASE_IMAGE:-debian:11-slim}"
+        APT_MIRROR: "${APT_MIRROR:-}"
+        APT_SECURITY_MIRROR: "${APT_SECURITY_MIRROR:-}"
+        PIP_INDEX: "${PIP_INDEX_URL:-}"
+        PIP_TRUSTED: "${PIP_TRUSTED_HOST:-}"
+        GALAXY_SERVER: "${ANSIBLE_GALAXY_SERVER:-}"
     environment:
     - EDB_REPO_USERNAME="${EDB_REPO_USERNAME:- }"
     - EDB_REPO_PASSWORD="${EDB_REPO_PASSWORD:- }"

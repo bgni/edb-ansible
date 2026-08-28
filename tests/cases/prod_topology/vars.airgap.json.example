@@ -1,0 +1,15 @@
+{
+  "_comment": "Air-gapped overrides for the prod_topology case. Copy to vars.airgap.json, edit for your mirrors, and merge into vars.json (or pass with a second --extra-vars @file). These are Ansible variables rather than environment variables because the setup_repo role reads them during the deploy -- tests/airgap.env.example covers the environment side, which is about building the images. Both are needed for a fully isolated run.",
+
+  "_comment_repos": "The repositories setup_repo installs on each node. Point them at whatever your Artifactory yum-remote mirrors. If the mirror serves unsigned metadata, see _comment_gpg below.",
+  "pg_rpm_repo_9_x86_64": "https://your-artifactory/artifactory/yum-remote/pgdg/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm",
+  "pg_gpg_key_9_x86_64": "https://your-artifactory/artifactory/yum-remote/pgdg/keys/PGDG-RPM-GPG-KEY-RHEL",
+  "epel_repo_9": "https://your-artifactory/artifactory/yum-remote/epel/epel-release-latest-9.noarch.rpm",
+  "epel_gpg_key_9": "https://your-artifactory/artifactory/yum-remote/epel/RPM-GPG-KEY-EPEL-9",
+
+  "_comment_gpg": "Some mirrors re-sign or strip signatures. If package installation fails GPG verification against your mirror, the repository RPMs above are what carry the key configuration -- fix it there rather than disabling checking cluster-wide.",
+
+  "_comment_edb": "Only needed for EPAS or EDB-repository builds. With EDB_ENABLE_REPO=false and pg_type=PG these are unused.",
+  "edb_rpm_repo": "https://your-artifactory/artifactory/yum-remote/edb/edb-repo-latest.noarch.rpm",
+  "edb_gpg_key_8": "https://your-artifactory/artifactory/yum-remote/edb/ENTERPRISEDB-GPG-KEY"
+}

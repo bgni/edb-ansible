@@ -45,6 +45,97 @@ $ make -C tests/cases/setup_pgbouncer rocky8
 rather than running a matrix nobody reads. The previous full matrix is in git
 history.
 
+## Running a case without `make`
+
+`tests/run-case.sh` does everything the Makefile targets did — build the
+collection tarball, start the node containers, set up SSH between them, render
+the inventory, then run the playbook and pytest:
+
+```shell
+$ ./tests/run-case.sh --list                       # available cases
+$ ./tests/run-case.sh prod_topology                # os defaults to rhel9
+$ ./tests/run-case.sh setup_replication rhel9
+$ ./tests/run-case.sh prod_topology rhel9 --clean  # tear down
+```
+
+`make` is not required. `ansible-galaxy` is, on the host, because the tester
+container installs the collection from a tarball built there.
+
+Set `KEEP_CONTAINERS=true` to leave the cluster running after the tests, which
+is useful when a test fails and you want to inspect the nodes.
+
+The Makefile targets still work and are unchanged; the script is an
+alternative entry point, not a replacement.
+
+## Air-gapped and mirrored environments
+
+Everything the harness fetches is redirectable. Start from the example file:
+
+```shell
+$ cp tests/airgap.env.example tests/airgap.env
+$ $EDITOR tests/airgap.env
+$ set -a; . tests/airgap.env; set +a
+$ python3 tests/scripts/check-resources.py --case prod_topology
+$ ./tests/run-case.sh prod_topology rhel9
+```
+
+There are two separate layers, and both need configuring:
+
+**Building the images** — environment variables, consumed as Docker build args:
+
+| Variable | Redirects |
+|---|---|
+| `RHEL_BASE_IMAGE` | the database node base image |
+| `TESTER_BASE_IMAGE` | the controller container base image |
+| `YUM_BASEURL` | RPMs inside the database nodes |
+| `YUM_GPGCHECK` | set `0` if the mirror serves unsigned metadata |
+| `APT_MIRROR`, `APT_SECURITY_MIRROR` | Debian packages in the controller |
+| `PIP_INDEX_URL`, `PIP_TRUSTED_HOST` | Python packages |
+| `ANSIBLE_GALAXY_SERVER` | the pinned Ansible collections |
+
+When `YUM_BASEURL` is set, every repository the base image ships is disabled
+and that one is used instead — so the mirror must carry the base OS content as
+well as anything the roles install.
+
+**Deploying the cluster** — Ansible variables, because the `setup_repo` role
+reads them at deploy time rather than at build time. They go in the case's
+`vars.json`; see `tests/cases/prod_topology/vars.airgap.json.example` for
+`pg_rpm_repo_9_x86_64`, `pg_gpg_key_9_x86_64`, `epel_repo_9` and
+`epel_gpg_key_9`.
+
+Missing this second layer is the usual way an "air-gapped" run still fails: the
+images build fine from your mirrors, and then the deploy reaches for
+`download.postgresql.org`.
+
+### Checking resources before a run
+
+```shell
+$ python3 tests/scripts/check-resources.py --case prod_topology
+```
+
+Standard library only, so it runs on a bare host before any tooling is
+installed. It checks the host commands, the container engine and its
+socket/compose plugin, whether the base images are present, and every package
+source — then reads the four PGDG/EPEL URLs straight out of
+`roles/setup_repo/defaults/main.yml` and checks whatever they currently point
+at, so it stays in step with the role instead of duplicating the list.
+
+Exit status is 0 when everything required is reachable. Anything left at a
+public default is reported as `WARN` rather than `OK`, because on a connected
+host it will work and the failure would only surface once you are actually
+isolated:
+
+```text
+  OK     database node base image     registry.access.redhat.com/ubi9/ubi-init:9.7 (present locally)
+  WARN   Python package index         https://pypi.org/simple -> HTTP 200 (public default -- set PIP_INDEX_URL for air-gapped use)
+  FAIL   yum mirror                   https://artifactory.invalid/... -> Name or service not known
+                                      -> set YUM_BASEURL to a reachable mirror
+```
+
+Add `--json` for machine-readable output, and set `CHECK_INSECURE=1` if your
+mirror presents a certificate this host does not trust — that affects only the
+checker, never the deployment.
+
 ## Testing framework
 
 Executing a test case consists basically in:
