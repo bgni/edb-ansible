@@ -504,16 +504,33 @@ def failover():
     start_writer(old_host, 'ack')      # asserts it actually started
     time.sleep(10)                     # let a meaningful number commit
 
-    # Abrupt: SIGKILL the postmaster, no clean shutdown, writes in flight.
+    # Abrupt, then fenced. Both halves are needed and for different reasons.
+    #
+    # SIGKILL gives the abrupt loss: no clean shutdown, no final flush, writes
+    # in flight. `systemctl stop` alone would be graceful and would flush
+    # everything, which tests nothing about data loss.
+    #
+    # The stop that follows is the fence. The unit ships Restart=on-failure, so
+    # systemd brings PostgreSQL straight back after a kill -- observed here as
+    # NRestarts=1 -- and repmgr then rightly refuses to promote with
+    # "this replication cluster already has an active primary server". A killed
+    # node is not a fenced node; it has to be kept down explicitly.
     with old_host.sudo():
-        old_host.run('pkill -9 -f "postgres: .*writer" || true')
         old_host.run('systemctl kill -s SIGKILL %s || true'
                      % get_pg_service_name())
         old_host.run('pkill -9 postgres || true')
+        old_host.run('systemctl stop %s || true' % get_pg_service_name())
 
     assert wait_until(lambda: not alive(old_host), timeout=120), \
         '%s still answers after SIGKILL; promoting now would risk two ' \
         'writable nodes' % old_name
+
+    # And confirm it stays down rather than being restarted underneath us.
+    time.sleep(10)
+    assert not alive(old_host), (
+        '%s came back after being killed (systemd Restart=on-failure). It is '
+        'not fenced, and repmgr will refuse to promote while it is running.'
+        % old_name)
 
     tokens = acknowledged_tokens(old_host)
     stop_writer(old_host)
