@@ -24,6 +24,14 @@
   "mtls_pg_user": "mtls_app",
   "mtls_map_name": "mtls",
 
+  "_comment_pgbackrest": "pgBackRest encrypts its repository by default (repo_cipher_type aes-256-cbc) and refuses to configure without a passphrase, so repo_cipher_password has to be set. A throwaway value is fine here; a real deployment supplies this from its secret store.",
+  "pgbackrest_package_name": "pgbackrest",
+  "pgbackrest_user": "pgbackrest",
+  "pgbackrest_group": "pgbackrest",
+  "pgbackrest_configuration_file": "/etc/pgbackrest.conf",
+  "pgbackrest_home": "/var/lib/pgbackrest",
+  "repo_cipher_password": "prod-topology-test-passphrase",
+
   "_comment_failover": "repmgr_failover is left at the role default so the deployment test observes the shipped behaviour rather than a corrected one. test_prod_topology.py asserts what the default actually produces (finding EDB-01).",
 
   "_comment_no_pg_users": "Do NOT define pg_users here. setup_replication creates its replication user by calling manage_dbserver with `include_role` and `vars: pg_users: [repuser]`, and --extra-vars outrank include_role vars. A pg_users key in this file therefore replaces that list everywhere, repuser is never created, and the deployment fails later with `Role 'repuser' does not exist` while granting the pg_rewind privileges. Roles needed by the tests are created by the mTLS play in playbook.yml, which passes pg_users through include_role rather than as an extra var."
