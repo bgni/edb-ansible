@@ -79,6 +79,15 @@ RUN dnf install -y "${PGDG_REPO_RPM}" "${EPEL_REPO_RPM}" \
 # Everything the deployment installs, in one place. Keep this list in step with
 # the roles: a package missing here surfaces as a failure during the offline
 # run, which is the point.
+# The Python bindings install_dbserver puts on every node. Without
+# python3-psycopg2 every community.postgresql module fails with "Failed to
+# import the required Python library (psycopg2)" -- which is what happens when
+# this image is used and install_dbserver is skipped.
+RUN dnf install -y \
+      python3-pycurl \
+      python3-psycopg2 \
+    && dnf clean all
+
 RUN dnf install -y \
       "postgresql${pg_version}-server" \
       "postgresql${pg_version}-contrib" \
@@ -92,6 +101,17 @@ RUN dnf install -y \
 # postgres-cluster-xinetd installs it only when ansible_os_family != 'RedHat'
 # -- on RHEL the health endpoint is a systemd socket-activated service instead.
 # Adding it here would fail the build with "No match for argument: xinetd".
+
+# NOTE: the repositories are deliberately left enabled. setup_repmgr,
+# setup_pgbackrest and setup_haproxy call dnf even when their package is
+# already installed, and dnf will not run at all with no enabled repository
+# ("There are no enabled repositories"). Leaving them on keeps those roles
+# working; the packages are already present so nothing is downloaded.
+#
+# This is why --preinstalled removes the *package installation* from the run,
+# not every network call. The configuration roles -- init_dbserver,
+# setup_replication, manage_dbserver -- are the network-free part, and that is
+# what the mode is for.
 
 # Recorded so the offline run can assert it is using the image it expects.
 RUN printf 'pg_version=%s\n' "${pg_version}" > /etc/edb-ansible-preinstalled
