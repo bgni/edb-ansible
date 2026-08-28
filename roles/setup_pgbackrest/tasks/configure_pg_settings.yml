@@ -17,4 +17,4 @@
 
 - name: Reset _pg_postgres_conf_params
   ansible.builtin.set_fact:
-    _pg_postgres_conf_params: ""
+    _pg_postgres_conf_params: []
