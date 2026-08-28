@@ -84,8 +84,15 @@ The maps are rendered **in full** into a separate, Ansible-managed file
 the main `pg_ident.conf` includes:
 
 ```
-include_if_exists 'pg_ident_ansible.conf'
+include_if_exists pg_ident_ansible.conf
 ```
+
+The file name is deliberately unquoted. `postgresql.conf` requires
+`include 'file'`, but `pg_ident.conf` and `pg_hba.conf` take the name
+literally and keep any quotes as part of it -- so a quoted name makes
+PostgreSQL look for a file whose name contains apostrophes, fail to find
+it, and (because `include_if_exists` tolerates a missing file) load no
+mappings at all while everything still looks correctly configured.
 
 That keeps one owner per file. This role owns every line of the managed file
 and regenerates it on each run, so removing an entry from `pg_ident_maps`

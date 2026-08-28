@@ -41,11 +41,23 @@
 # The include is relative, which PostgreSQL resolves against the directory
 # holding pg_ident.conf. include_if_exists rather than include so that removing
 # the managed file does not stop Postgres from starting.
+#
+# The file name must NOT be quoted. postgresql.conf and pg_ident.conf differ
+# here: postgresql.conf requires `include 'file'`, while pg_ident.conf and
+# pg_hba.conf take the name literally and keep the quotes as part of it. With
+# quotes, PostgreSQL looks for a file called "'pg_ident_ansible.conf'" inside
+# the data directory, does not find it, and -- because include_if_exists
+# ignores a missing file -- silently loads no mappings at all:
+#
+#   could not open file ".../data/'.../pg_ident_ansible.conf'"
+#
+# Everything then looks correctly configured while certificate authentication
+# fails with "connection requires a valid client certificate".
 - name: Include the Ansible managed ident map file from pg_ident.conf
   ansible.builtin.lineinfile:
     path: "{{ _pg_ident_file }}"
-    line: "include_if_exists '{{ pg_ident_managed_filename }}'"
-    regexp: "^\\s*include_if_exists\\s+'{{ pg_ident_managed_filename }}'\\s*$"
+    line: "include_if_exists {{ pg_ident_managed_filename }}"
+    regexp: "^\\s*include_if_exists\\s+'?{{ pg_ident_managed_filename }}'?\\s*$"
     owner: "{{ pg_owner }}"
     group: "{{ pg_group }}"
     mode: "0600"
