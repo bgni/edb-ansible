@@ -18,7 +18,7 @@ services:
     - EDB_OS
     - ANSIBLE_CORE_VERSION="${ANSIBLE_CORE_VERSION:-2.13}"
     volumes:
-    - ../../..:/workspace
+    - ../../..:/workspace:Z
     command: "/workspace/tests/docker/exec-tests.sh"
   pem1-rocky8:
     privileged: true
@@ -28,7 +28,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   pem1-rocky9:
@@ -39,7 +39,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   pem1-almalinux8:
@@ -50,7 +50,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   pem1-centos7:
@@ -61,7 +61,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   pem1-oraclelinux7:
@@ -72,7 +72,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   pem1-debian10:
@@ -83,7 +83,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     tmpfs:
     - /run
@@ -98,7 +98,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     tmpfs:
     - /run

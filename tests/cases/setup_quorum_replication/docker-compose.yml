@@ -30,7 +30,7 @@ services:
     # Offline mode: skip the roles that need a package repository.
     - PREINSTALLED=${PREINSTALLED:-false}
     volumes:
-    - ../../..:/workspace
+    - ../../..:/workspace:Z
     command: "/workspace/tests/docker/exec-tests.sh"
   primary1-rhel9:
     privileged: true
@@ -49,7 +49,7 @@ services:
     # on cgroup v1 hosts; this form works on both v1 and v2.
     cgroup: host
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup:/sys/fs/cgroup:rw
     tmpfs:
     - /run
@@ -72,7 +72,7 @@ services:
     # on cgroup v1 hosts; this form works on both v1 and v2.
     cgroup: host
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup:/sys/fs/cgroup:rw
     tmpfs:
     - /run
@@ -95,7 +95,7 @@ services:
     # on cgroup v1 hosts; this form works on both v1 and v2.
     cgroup: host
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup:/sys/fs/cgroup:rw
     tmpfs:
     - /run
@@ -118,7 +118,7 @@ services:
     # on cgroup v1 hosts; this form works on both v1 and v2.
     cgroup: host
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup:/sys/fs/cgroup:rw
     tmpfs:
     - /run

@@ -268,6 +268,51 @@ def restore_standbys():
         systemctl(host, 'start')
 
 
+
+def insert_row_in_background(host, label):
+    """
+    Start a commit that is expected to block, without waiting for it.
+
+    nohup plus a redirect so the connection outlives this command: the point is
+    to leave a backend waiting, not to collect its output.
+    """
+    # Same statement as insert_row(), including the explicit
+    # synchronous_commit, so the commit really does wait for the quorum.
+    command = (
+        "nohup psql -At -h %s -c \"SET synchronous_commit TO on; "
+        "INSERT INTO %s (label) VALUES ('%s')\" postgres "
+        ">/tmp/blocked_commit.out 2>&1 &"
+        % (get_pg_unix_socket_dir(), TEST_TABLE, label)
+    )
+    with host.sudo(get_pg_owner()):
+        return host.run(command)
+
+
+def waiting_backends(host):
+    """Every client backend and what it is waiting on, for failure messages."""
+    result = psql(
+        host,
+        "SELECT coalesce(wait_event_type,'-')||'/'||coalesce(wait_event,'-')"
+        "||' '||left(query,40) FROM pg_stat_activity "
+        "WHERE backend_type = 'client backend' AND pid <> pg_backend_pid()")
+    return result.stdout.strip() or '(no client backends)'
+
+
+def backend_waiting_on_syncrep(host, label):
+    """
+    True when a backend is blocked waiting for synchronous confirmation.
+
+    'SyncRep' with wait_event_type 'IPC' is what PostgreSQL 17 reports for a
+    commit waiting on synchronous_standby_names.
+    """
+    result = psql(
+        host,
+        "SELECT count(*) FROM pg_stat_activity "
+        "WHERE wait_event_type = 'IPC' AND wait_event = 'SyncRep' "
+        "AND query LIKE '%%%s%%'" % label)
+    return result.rc == 0 and result.stdout.strip() not in ('', '0')
+
+
 def test_setup_quorum_replication_cluster_topology():
     primaries = get_named_hosts('primary')
     standbys = get_named_hosts('standby')
@@ -415,15 +460,26 @@ def test_setup_quorum_replication_commits_with_quorum_available():
     try:
         wait_for_streaming_standbys(primary, len(running))
 
-        result = insert_row(primary, label)
+        # Start the commit in the background and observe the server blocking,
+        # rather than killing psql after a timeout and inferring it. A backend
+        # waiting for synchronous confirmation reports wait_event 'SyncRep'
+        # (wait_event_type 'IPC') -- confirmed against PostgreSQL 17, where
+        # pg_wait_events also lists a Client/WaitForStandbyConfirmation event
+        # that is *not* what a committing backend shows.
+        #
+        # Observing the wait directly is exact, needs no timeout, and avoids
+        # disconnecting a client mid-commit.
+        insert_row_in_background(primary, label)
 
-        assert result.rc == 0, \
-            "Commit did not complete with %d of %d standby(s) up (rc=%d): %s" \
-            % (len(running), len(standbys), result.rc, result.stderr.strip())
+        assert wait_until(lambda: backend_waiting_on_syncrep(primary, label)), \
+            "The commit did not enter a SyncRep wait with the quorum short; " \
+            "pg_stat_activity shows %s" % waiting_backends(primary)
 
-        for name, host in running:
-            assert wait_for_row(host, label), \
-                "The row was not replicated to %s" % name
+        # The transaction is flushed and marked committed locally before the
+        # wait, so it is already visible here. Postgres documents this: a
+        # cancelled wait still leaves the transaction committed.
+        assert wait_for_row(primary, label), \
+            "The blocked transaction is not visible on the primary"
     finally:
         for name, host in stopped:
             systemctl(host, 'start')

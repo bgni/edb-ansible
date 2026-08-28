@@ -18,7 +18,7 @@ services:
     - EDB_OS
     - ANSIBLE_CORE_VERSION="${ANSIBLE_CORE_VERSION:-2.13}"
     volumes:
-    - ../../..:/workspace
+    - ../../..:/workspace:Z
     command: "/workspace/tests/docker/exec-tests.sh"
   primary1-rocky8:
     privileged: true
@@ -28,7 +28,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   standby1-rocky8:
@@ -39,7 +39,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   primary1-rocky9:
@@ -50,7 +50,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   standby1-rocky9:
@@ -61,7 +61,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   primary1-almalinux8:
@@ -72,7 +72,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   standby1-almalinux8:
@@ -83,7 +83,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     command: /usr/sbin/init
   primary1-debian10:
@@ -94,7 +94,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     tmpfs:
     - /run
@@ -109,7 +109,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     tmpfs:
     - /run
@@ -124,7 +124,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     tmpfs:
     - /run
@@ -139,7 +139,7 @@ services:
     cap_add:
     - SYS_ADMIN
     volumes:
-    - .:/workspace
+    - .:/workspace:Z
     - /sys/fs/cgroup/:/sys/fs/cgroup:ro
     tmpfs:
     - /run

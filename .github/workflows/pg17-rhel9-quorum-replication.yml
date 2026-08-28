@@ -1,9 +1,16 @@
-name: PostgreSQL 17 on RHEL 9.7
+name: PostgreSQL 17 on UBI/RHEL 9
 
 # Deploys a four node cluster (one primary, three standbys) with quorum based
 # synchronous replication -- ANY 2 of the three standbys must confirm a commit
 # -- and checks that Postgres 17 works and that the quorum behaves as expected
 # when standbys go away and come back.
+#
+#
+# NAMING: this is UBI/RHEL 9 *compatibility*, not RHEL 9.7 validation. The base
+# image is UBI 9.7, but the packages come from the current PGDG repositories and
+# are built for a later minor -- a run installs postgresql17-server-17.11-1
+# PGDG.rhel9.8 onto a 9.7 base. Validating an exact RHEL minor needs frozen
+# repositories and preferably real VMs.
 #
 # The cluster nodes are RedHat Universal Base Images, which are redistributable
 # and need no subscription. The tag is pinned to the RHEL minor version under
@@ -39,7 +46,7 @@ jobs:
     # Pinned: the test containers run systemd, which is sensitive to the
     # runner's cgroup layout.
     runs-on: ubuntu-22.04
-    name: Four node ANY 2 quorum replication, PostgreSQL 17 on RHEL 9.7
+    name: Four node ANY 2 quorum replication, PostgreSQL 17 on UBI/RHEL 9
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4

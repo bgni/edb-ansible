@@ -196,7 +196,7 @@ the components related to the test case.
 
 ## Test case: `setup_quorum_replication`
 
-This test case covers PostgreSQL 17 on RedHat Enterprise Linux 9.7, deployed as
+This test case covers PostgreSQL 17 on UBI/RHEL 9, deployed as
 a four node cluster -- one primary and three standbys -- using quorum based
 synchronous replication.
 
@@ -620,7 +620,7 @@ Make and Python layers use the same engine.
 
 ### PostgreSQL 17 four-node replication case
 
-Run the RHEL 9.7-compatible PostgreSQL 17 replication case with either engine:
+Run the UBI/RHEL 9 PostgreSQL 17 replication case with either engine:
 
 ```shell
 CONTAINER_ENGINE=podman \
