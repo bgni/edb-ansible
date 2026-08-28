@@ -170,6 +170,55 @@ matters when reading a failure:
   fixed the test fails and tells you to remove it and refresh
   `tests/findings/baseline.json`.
 
+### Day-two operations
+
+`tests/tests/test_prod_topology_day2.py` covers what happens *after* the
+deploy. It runs in the same case, so `make -C cases/prod_topology rhel9` picks
+it up automatically.
+
+**Configuration change on a running cluster.** `day2_config.yml` re-runs
+`manage_dbserver` against the deployed cluster with a changed
+`pg_postgres_conf_params` — the way an operator applies a configuration update
+after the initial deploy. Two paths are exercised:
+
+- a **reload-only** setting (`log_min_duration_statement`) must reach every
+  node and restart nothing. The test compares
+  `pg_postmaster_start_time()` before and after and fails if any node
+  restarted, because a restart for a reloadable setting is an availability
+  event nobody asked for.
+- a **restart-requiring** setting (`shared_buffers`) must reach every node and
+  the cluster must come back: every postmaster returns, every standby
+  re-attaches, the approved quorum is still in force, and a row committed
+  afterwards still reaches all three standbys.
+
+`shared_buffers` is used rather than something like `max_connections` because
+it carries no primary/standby ordering constraint — a standby refuses to start
+if its `max_connections` is below the primary's, which would fail the test for
+a reason unrelated to what it checks.
+
+**Promotion.** A module-scoped fixture stops the primary and promotes the first
+standby with `repmgr standby promote` (falling back to `pg_ctl promote`), then
+the tests assert the promoted node left recovery, accepts writes, advanced its
+timeline, and — the point of EDB-03 — **was already carrying the approved
+synchronous policy** rather than receiving it after the fact.
+
+Promotion is also where two findings stop being theoretical:
+
+- **EDB-18** — while the node was a standby, `archive_mode=on` meant the
+  inherited `/bin/true` archive command never ran, so nothing looked wrong.
+  After promotion it runs, exits 0 for every segment, and stores nothing. The
+  test forces a WAL switch and shows `pg_stat_archiver` counting the segment as
+  archived with zero failures: PITR from this new primary is broken from the
+  moment it was promoted, silently.
+- **EDB-07** — the inventory still calls the stopped node the primary, so a
+  rerun would configure and force-register the wrong node.
+
+Ordering is load-bearing. pytest collects files alphabetically, so
+`test_prod_topology.py` runs before `test_prod_topology_day2.py`, and within
+that file the configuration tests run before the promotion tests. The promotion
+fixture stops the primary, so nothing that assumes the deployed topology may be
+added after it.
+
 ### TLS in this case
 
 `pg_ssl` is `false` here. The collection has no ACME/certbot integration, and

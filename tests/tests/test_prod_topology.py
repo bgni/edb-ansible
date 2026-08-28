@@ -52,6 +52,20 @@ TEST_TABLE = 'prod_topology_check'
 FAKE_ARCHIVE_COMMAND = '/bin/true'
 
 
+def pg_instance_name():
+    """The instance name the case deployed with, defaulting as the roles do."""
+    return load_ansible_vars().get('pg_instance_name', 'main')
+
+
+def repmgr_config_path():
+    """
+    Mirrors repmgr_configuration_file in roles/setup_repmgr/vars/PG_RedHat.yml:
+    /etc/repmgr/<pg_version>/repmgr-<pg_instance_name>.conf
+    """
+    return '/etc/repmgr/%s/repmgr-%s.conf' % (
+        get_pg_version(), pg_instance_name())
+
+
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -471,10 +485,10 @@ def test_finding_edb_01_failover_is_automatic_without_fencing():
     writable timelines. The reviews require `failover=manual` until a tested
     fencing mechanism exists.
     """
-    conf = get_primary().file('/etc/repmgr/%s/repmgr.conf' % get_pg_version())
+    conf = get_primary().file(repmgr_config_path())
 
     if not conf.exists:
-        pytest.skip('repmgr.conf not found at the expected path')
+        pytest.skip('%s not found' % repmgr_config_path())
 
     match = re.search(r"^failover\s*=\s*'?(\w+)'?", conf.content_string,
                       re.MULTILINE)
