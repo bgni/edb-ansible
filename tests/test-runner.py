@@ -12,7 +12,11 @@ import yaml
 
 
 class PgVersionChecker(argparse.Action):
-    available_versions = ['10', '11', '12', '13', '14', '15', '16', '17']
+    # Scoped to the version this fork deploys. Older majors are still present
+    # in the roles' supported_pg_version lists and can be deployed by hand;
+    # they are simply not accepted by the automated runner, so a stray
+    # `--pg-version 14` fails fast instead of running a matrix nobody reads.
+    available_versions = ['17']
 
     def __call__(self, parser, namespace, values, option_string=None):
         for v in values:
@@ -32,8 +36,10 @@ class PgTypeChecker(argparse.Action):
 
 
 class OSChecker(argparse.Action):
-    available_os = ['centos7', 'centos8', 'rocky8', 'rocky9', 'rhel8', 'rhel9', 'almalinux8', 'debian9', 'debian10',
-                    'debian11', 'ubuntu20', 'ubuntu22', 'suse15', 'oraclelinux7', 'oraclelinux8', 'oraclelinux9']
+    # Scoped to the OS this fork deploys. The Dockerfiles and per-case Make
+    # targets for the other distributions are still in the tree and can be
+    # driven directly with `make -C tests/cases/<case> <os>`.
+    available_os = ['rhel9']
 
     def __call__(self, parser, namespace, values, option_string=None):
         for v in values:
@@ -190,7 +196,9 @@ if __name__ == '__main__':
         '--ansible-core-version',
         dest='ansible_core_version',
         nargs='+',
-        default=['2.13'],
+        # Matches the version the RHEL 9 / PostgreSQL 17 CI jobs install, so a
+        # local run exercises the same combination as CI.
+        default=['2.15'],
         action=ACVersionChecker,
         help="Ansible-core version to be used by tester. Default: %(default)s",
     )

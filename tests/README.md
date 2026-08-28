@@ -10,8 +10,40 @@ common subject could be related to a specific Role we want to test, or a
 combination of several Roles with particular parameters for example.
 
 This testing framework relies mainly on containers, Compose, and `pytest`.
-The `setup_replication` case supports both Docker Compose and Podman's
-`podman compose` frontend; older cases may still require Docker.
+The RHEL 9 cases run under both Docker and rootless Podman; older cases may
+still require Docker.
+
+## What is automated, and what is not
+
+Automation is scoped to the deployment this fork actually runs: **PostgreSQL 17
+on RHEL 9**, with pgBackRest, repmgr and HAProxy. Three cases are automated,
+and between them they exercise every role in that deployment:
+
+| Case | Covers | Runs |
+|---|---|---|
+| `setup_replication` | Core streaming replication, four nodes | Every push |
+| `setup_quorum_replication` | `ANY 2` quorum, including degraded-quorum writes | Every push |
+| `prod_topology` | Full stack: repmgr witness, pgBackRest, HAProxy | Manual dispatch |
+
+Plus `tests/findings/`, which checks the source-review findings statically on
+every push and needs no containers at all.
+
+**Not automated:** PostgreSQL majors below 17, any OS other than RHEL 9, and
+the components we do not deploy — pgBouncer, pgPool-II, EFM, Patroni, PEM,
+Barman, PGD, CloudNativePG, TDE, binary upgrade, and the DBT-2/3/7, HammerDB
+and touchstone benchmark harnesses.
+
+Those roles and their test cases are still in the tree and still work; they are
+simply not run automatically. To run one by hand:
+
+```shell
+$ make -C tests/cases/setup_pgbouncer rocky8
+```
+
+`tests/config.yml` and the `--pg-version` / `--os` validators in
+`test-runner.py` are scoped to match, so a stray `--pg-version 14` fails fast
+rather than running a matrix nobody reads. The previous full matrix is in git
+history.
 
 ## Testing framework
 
@@ -365,10 +397,46 @@ EDB_ENABLE_REPO=false \
 make -C tests/cases/setup_replication rhel9
 ```
 
-Replace `podman` with `docker` for Docker Compose. Rootful containers are
-required because each database container runs systemd. The default target
-image is Red Hat UBI Init 9.7; set `RHEL_BASE_IMAGE` to the exact internal RHEL
-9.7 image used by production when it is available.
+Replace `podman` with `docker` for Docker Compose. The default target image is
+Red Hat UBI Init 9.7; set `RHEL_BASE_IMAGE` to the exact internal RHEL 9.7
+image used by production when it is available.
+
+#### Rootless Podman
+
+**Rootless works** -- rootful is not required, despite what the systemd
+containers suggest. Verified on Podman 5.4.2 with cgroup v2 and the systemd
+cgroup manager: `systemd` reaches `running` inside the UBI Init container,
+`sshd` starts, and PostgreSQL 17 installs from PGDG and runs under `systemctl`.
+
+Two things are needed for the Compose path:
+
+```shell
+# 1. docker compose (and podman-docker) talk to the Podman API socket, which
+#    is not started by default.
+$ systemctl --user enable --now podman.socket
+
+# 2. ansible-galaxy must be on the *host* -- the top-level `make` builds the
+#    collection tarball outside the containers.
+$ sudo apt install ansible-core      # or: dnf install ansible-core
+```
+
+`pytest`, `testinfra` and Ansible itself are only needed inside the
+`ansible-tester` container, which installs them from `tests/requirements.txt`,
+so they do not have to be present on the host.
+
+Two rootless quirks worth knowing:
+
+- `systemctl list-units --state=failed` shows `sys-kernel-config.mount`,
+  `sys-kernel-debug.mount` and `sys-kernel-tracing.mount` as failed, which
+  makes `systemctl is-system-running` report `degraded`. This is expected in
+  an unprivileged container and does not affect the tests.
+- Teardown can fail with `rootless netns: kill network process: permission
+  denied`. If `make clean` leaves containers behind, remove them directly:
+
+  ```shell
+  $ podman rm -f $(podman ps -aq)
+  $ podman network prune -f
+  ```
 
 This case creates `postgres01` through `postgres04`, checks all three physical
 replication connections and slots, verifies the following setting on every

@@ -1,0 +1,8 @@
+# Build outputs of the top-level Makefile. `make` renders galaxy.yml from
+# galaxy.template.yml and builds the collection tarball; `make clean` removes
+# both.
+/galaxy.yml
+/edb_devops-edb_postgres-*.tar.gz
+
+__pycache__/
+*.pyc
