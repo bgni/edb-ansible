@@ -9,8 +9,9 @@ The tests are grouped by a common subject into multiple *test cases*. This
 common subject could be related to a specific Role we want to test, or a
 combination of several Roles with particular parameters for example.
 
-This testing framework relies mainly on `docker` containers, `docker compose`
-and `pytest`.
+This testing framework relies mainly on containers, Compose, and `pytest`.
+The `setup_replication` case supports both Docker Compose and Podman's
+`podman compose` frontend; older cases may still require Docker.
 
 ## Testing framework
 
@@ -49,7 +50,7 @@ the components related to the test case.
 This testing framework requires the following commands/tools:
 - `python3`
 - `pip3`
-- `docker` and `docker compose`
+- `docker` with `docker compose`, or `podman` with `podman compose`
 - `make`
 
 To install the dependencies:
@@ -198,6 +199,20 @@ $ export EDB_REPO_TOKEN=<edb-repo-token>
 $ export ANSIBLE_CORE_VERSION=2.13
 $ make -C cases/init_dbserver rocky8
 ```
+
+Select the container engine with `CONTAINER_ENGINE`:
+
+```shell
+# Docker (the default used by Make)
+$ CONTAINER_ENGINE=docker make -C cases/setup_replication rocky9
+
+# Podman
+$ CONTAINER_ENGINE=podman make -C cases/setup_replication rocky9
+```
+
+The Python helper scripts auto-detect Podman first and Docker second when the
+variable is not set. Set it explicitly when both are installed so that the
+Make and Python layers use the same engine.
 
 Containers hosting Postgres and the components we had tested with the help of
 the previous command are not automatically destroyed. For cleaning up those,
