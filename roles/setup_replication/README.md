@@ -66,6 +66,41 @@ The rest of the variables can be configured and are available in the:
   * [roles/setup_replication/vars/PG_RedHat.yml](./vars/PG_RedHat.yml)
   * [roles/setup_replication/vars/PG_Debian.yml](./vars/PG_Debian.yml)
 
+### Synchronous quorum and failover candidates
+
+Use stable libpq application names and configure the same candidate list on
+every database node. For one required acknowledgement from any member of a
+four-node cluster:
+
+```yaml
+synchronous_standby_application_names:
+  - postgres01
+  - postgres02
+  - postgres03
+  - postgres04
+synchronous_standby_num_sync: 1
+standby_quorum_type: ANY
+```
+
+Each host uses its inventory name as `replication_application_name` by
+default. Set it explicitly per host when the required PostgreSQL application
+name differs from `inventory_hostname`.
+
+The resulting setting is:
+
+```text
+ANY 1 ("postgres01","postgres02","postgres03","postgres04")
+```
+
+The primary's own name is intentionally present. It cannot match a WAL sender
+on that primary, but keeping one identical list on all four nodes means that a
+promoted node already has the correct policy. The remaining nodes reconnect
+using their own application names.
+
+`synchronous_standby_names` remains available as a raw PostgreSQL expression
+and takes precedence over the structured variables. Do not use `*` when only
+the named physical standbys should be eligible.
+
 ## Dependencies
 
 The `setup_replication` role does not have any dependencies on any other roles.

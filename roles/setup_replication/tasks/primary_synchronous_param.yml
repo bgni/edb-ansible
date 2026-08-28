@@ -1,29 +1,40 @@
 ---
-- name: Set _synchronous_standby_names
+- name: Select synchronous standby application names
   ansible.builtin.set_fact:
-    _synchronous_standby_names: >-
+    _synchronous_standby_applications: >-
       {{
-        ' ' + _synchronous_standbys | default([]) | length | string() +
-        '(' + _synchronous_standbys | map('to_json') | join(',') + ')'
+        synchronous_standby_application_names
+        if synchronous_standby_application_names | length > 0
+        else _synchronous_standbys | default([])
       }}
+
+- name: Validate structured synchronous standby policy
+  ansible.builtin.assert:
+    that:
+      - standby_quorum_type | upper in ['ANY', 'FIRST']
+      - synchronous_standby_num_sync | int >= 1
+      - synchronous_standby_num_sync | int <= _synchronous_standby_applications | length
+      - _synchronous_standby_applications | unique | list | length == _synchronous_standby_applications | length
+      - _synchronous_standby_applications | select | list | length == _synchronous_standby_applications | length
+    fail_msg: >-
+      Invalid synchronous standby policy: quorum={{ standby_quorum_type }},
+      num_sync={{ synchronous_standby_num_sync }},
+      application_names={{ _synchronous_standby_applications }}
   when:
     - synchronous_standby_names|length < 1
 
-- name: Add standby quorum string
+- name: Build effective synchronous_standby_names
   ansible.builtin.set_fact:
-    synchronous_standby_names: "{{ standby_quorum_type + _synchronous_standby_names }}"
-  when:
-    - synchronous_standby_names|length < 1
-    - standby_quorum_type|length > 0
-    - _synchronous_standby_names|length > 0
+    _effective_synchronous_standby_names: >-
+      {% if synchronous_standby_names | length > 0 %}
+      {{ synchronous_standby_names }}
+      {% else %}
+      {{ standby_quorum_type | upper }} {{ synchronous_standby_num_sync | int }} ({{ _synchronous_standby_applications | map('to_json') | join(',') }})
+      {% endif %}
 
-- name: Call manage_dbserver tasks for synchronous_standby_names
-  ansible.builtin.include_role:
-    name: manage_dbserver
-    tasks_from: manage_postgres_params
-  vars:
-    pg_postgres_conf_params:
-      - name: synchronous_standby_names
-        value: "{{ synchronous_standby_names }}"
-  when: synchronous_standby_names|length > 0
-  no_log: "{{ disable_logging }}"
+- name: Configure synchronous policy on every promotion candidate
+  ansible.builtin.include_tasks: configure_synchronous_node.yml
+  loop: "{{ pg_cluster_nodes }}"
+  loop_control:
+    loop_var: synchronous_node
+  when: synchronous_node.node_type in ['primary', 'standby']

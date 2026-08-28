@@ -38,7 +38,14 @@ efm_cluster_name: "{{ pg_instance_name }}"
 efm_service: "edb-efm-{{ efm_cluster_name }}-{{ efm_version }}"
 
 synchronous_standby_names: ""
-standby_quorum_type: "any"
+# Used to build synchronous_standby_names when the raw setting above is empty.
+# Application names, not slot names or host addresses, are required here.
+synchronous_standby_application_names: []
+synchronous_standby_num_sync: 1
+standby_quorum_type: "ANY"
+
+# Stable libpq application_name used by this standby's WAL receiver.
+replication_application_name: "{{ inventory_hostname }}"
 
 pass_dir: "~/.edb"
 
@@ -88,3 +95,4 @@ supported_pg_version:
   - 14
   - 15
   - 16
+  - 17

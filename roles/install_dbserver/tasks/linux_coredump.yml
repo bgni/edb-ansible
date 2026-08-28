@@ -1,0 +1,27 @@
+---
+- name: Ensure coredump directory exists
+  ansible.builtin.file:
+    path: "{{ core_dump_directory }}"
+    state: directory
+    mode: "1777"
+  become: true
+
+- name: Configure core_pattern to write dumps to core_dump_directory
+  ansible.posix.sysctl:
+    name: kernel.core_pattern
+    value: "{{ core_dump_directory }}/core.%e.%p.%t"
+    state: present
+    sysctl_set: true
+    reload: true
+  become: true
+
+- name: Set core file size limit to unlimited in limits.conf
+  community.general.pam_limits:
+    domain: "*"
+    limit_type: "{{ item }}"
+    limit_item: core
+    value: unlimited
+  loop:
+    - soft
+    - hard
+  become: true

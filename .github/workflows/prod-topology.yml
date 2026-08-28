@@ -1,0 +1,90 @@
+name: Production-shaped topology (PG 17 / RHEL 9)
+
+# Deploys the topology the source reviews assume -- one primary, three
+# standbys, a repmgr witness, a pgBackRest repository host and an HAProxy
+# client gate -- and runs the live half of the finding audit against it.
+#
+# This is deliberately NOT on push. It brings up eight systemd containers and
+# builds a real cluster, which is far heavier than the per-push jobs. Run it
+# on demand, and before promoting a release artifact.
+#
+# The static half of the audit (tests/findings/) runs on every push instead,
+# in the `findings` job of push.yml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      rhel9_image_tag:
+        description: 'RHEL 9 UBI image tag to test against'
+        required: false
+        default: '9.7'
+      pg_version:
+        description: 'PostgreSQL major version'
+        required: false
+        default: '17'
+
+env:
+  # Pinned explicitly rather than left to auto-detection. GitHub runners have
+  # both docker and podman installed, and the harness prefers podman when no
+  # engine is named -- but only docker has a working socket here.
+  CONTAINER_ENGINE: docker
+  EDB_PG_TYPE: PG
+  EDB_PG_VERSION: ${{ github.event.inputs.pg_version || '17' }}
+  # PostgreSQL comes from the PGDG repositories, so no EDB repository
+  # credentials are needed.
+  EDB_ENABLE_REPO: 'false'
+  ANSIBLE_CORE_VERSION: '2.15'
+  RHEL9_IMAGE_TAG: ${{ github.event.inputs.rhel9_image_tag || '9.7' }}
+
+jobs:
+  prod-topology:
+    # Pinned: the test containers run systemd, which is sensitive to the
+    # runner's cgroup layout.
+    runs-on: ubuntu-22.04
+    name: Four nodes, witness, pgBackRest and HAProxy
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip jq
+          # ansible-core brings in the jinja2 and pyyaml modules used by the
+          # scripts that template the inventory.
+          sudo pip3 install "ansible-core==${ANSIBLE_CORE_VERSION}"
+
+      - name: Build the collection tarball
+        run: make
+
+      - name: Run the prod_topology test case
+        run: make -C tests/cases/prod_topology rhel9
+
+      - name: Collect the Postgres logs
+        if: failure()
+        working-directory: tests/cases/prod_topology
+        run: |
+          for service in primary1-rhel9 standby1-rhel9 standby2-rhel9 \
+                         standby3-rhel9 witness1-rhel9; do
+            echo "::group::${service}"
+            docker compose exec -T "${service}" \
+              journalctl -u "postgresql-${EDB_PG_VERSION}" --no-pager -n 200 || true
+            echo "::endgroup::"
+          done
+
+      - name: Collect the HAProxy and pgBackRest logs
+        if: failure()
+        working-directory: tests/cases/prod_topology
+        run: |
+          echo "::group::haproxy1"
+          docker compose exec -T haproxy1-rhel9 \
+            journalctl -u haproxy --no-pager -n 200 || true
+          echo "::endgroup::"
+          echo "::group::pgbackrest1"
+          docker compose exec -T pgbackrest1-rhel9 \
+            ls -la /var/log/pgbackrest || true
+          echo "::endgroup::"
+
+      - name: Tear down the containers
+        if: always()
+        run: make -C tests/cases/prod_topology clean

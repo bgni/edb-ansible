@@ -18,18 +18,28 @@
     - pg_type == 'EPAS'
 
 - name: Print basebackup command.
-  debug:
+  ansible.builtin.debug:
     var: pg_basebackup
 
 - name: Create standby
   ansible.builtin.shell: >
-    PGAPPNAME={{ inventory_hostname }} {{ pg_basebackup }}
+    PGAPPNAME={{ replication_application_name | quote }} {{ pg_basebackup }}
   args:
     creates: "{{ pg_data }}/PG_VERSION"
   become: true
   become_user: "{{ pg_owner }}"
   async: 180000
   poll: 60
+
+# After the base backup, before the service starts.
+#
+# pg_basebackup refuses a non-empty target directory, so these files cannot be
+# copied in beforehand. The clone also brings the *primary's* server key and
+# certificate along with the rest of PGDATA, so a standby that was given its
+# own certificate has to have it restored here, and it has to be in place
+# before Postgres starts rather than needing a later reload.
+- name: Send SSL files based on users input
+  ansible.builtin.import_tasks: pg_ssl_send_files.yml
 
 - name: Enable and start the service
   ansible.builtin.systemd:

@@ -1,0 +1,57 @@
+---
+# Deploys the cluster using the LOCAL collection in this repository.
+#
+# The tester installs the collection from the tarball built at the repo root
+# before this runs, so what gets exercised is the working tree -- your changes
+# to the roles, not a published release.
+#
+# Five nodes: four Postgres (one primary, three standbys) and a witness, which
+# also hosts the pgBackRest repository so the whole thing fits in five
+# containers.
+#
+# Re-runnable on purpose. Phase 2 runs this again against the running cluster
+# with only the synchronous policy changed, so nothing here may be destructive:
+# no force_initdb, no force_replication, no remove_only.
+- hosts: all
+  name: PostgreSQL cluster with repmgr and pgBackRest
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+
+  collections:
+    - edb_devops.edb_postgres
+
+  pre_tasks:
+    - name: Initialize the user defined variables
+      ansible.builtin.set_fact:
+        disable_logging: false
+        # Left empty deliberately: setup_replication only builds the policy
+        # from the quorum fields when this is unset. Pinning the finished
+        # string here would bypass the generator and make phase 2 a no-op.
+        synchronous_standby_names: ""
+
+  roles:
+    # The only two roles that need a package repository. Skipped when the nodes
+    # come from a pre-installed image.
+    - role: setup_repo
+      when:
+        - not (preinstalled | default(false) | bool)
+        - "'setup_repo' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: install_dbserver
+      when:
+        - not (preinstalled | default(false) | bool)
+        - "'install_dbserver' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+
+    # Configuration from here down, all safe to re-run.
+    - role: init_dbserver
+      when: "'init_dbserver' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: setup_replication
+      when: "'setup_replication' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: setup_repmgr
+      when: "'setup_repmgr' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: setup_pgbackrestserver
+      when: "'setup_pgbackrestserver' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: setup_pgbackrest
+      when: "'setup_pgbackrest' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"
+    - role: manage_dbserver
+      when: "'manage_dbserver' in lookup('edb_devops.edb_postgres.supported_roles', wantlist=True)"

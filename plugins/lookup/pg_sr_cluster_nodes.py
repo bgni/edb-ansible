@@ -70,6 +70,10 @@ class LookupModule(LookupBase):
                     private_ip=hostvars['private_ip'],
                     upstream_node_private_ip=None,
                     replication_type=None,
+                    application_name=hostvars.get(
+                        'replication_application_name',
+                        hostvars['inventory_hostname']
+                    ),
                     inventory_hostname=hostvars['inventory_hostname']
                 )
             )
@@ -88,6 +92,10 @@ class LookupModule(LookupBase):
                     upstream_node_private_ip=hostvars['upstream_node_private_ip'],
                     replication_type=hostvars.get('replication_type',
                                                   'asynchronous'),
+                    application_name=hostvars.get(
+                        'replication_application_name',
+                        hostvars['inventory_hostname']
+                    ),
                     inventory_hostname=hostvars['inventory_hostname']
                 )
 

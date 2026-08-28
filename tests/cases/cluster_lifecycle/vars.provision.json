@@ -1,0 +1,17 @@
+{
+  "_comment": "Phase 1 provisions with synchronous_standby_names = '*', which is the state the cluster is actually in today. '*' matches any application name, so it resolves to FIRST 1 (whichever standby connects first) -- a policy with no named candidates. Phase 2 then applies the real change, to an explicitly named ANY 1 over all four nodes.",
+  "use_hostname": false,
+  "pg_data": "/opt/pgdata",
+  "pg_wal": "/opt/pgwal",
+  "pg_ssl": false,
+  "synchronous_standby_names": "*",
+  "_comment_pgbackrest": "pgBackRest encrypts its repository by default (repo_cipher_type aes-256-cbc) and refuses to configure without a passphrase. A throwaway value here; a real deployment supplies this from its secret store.",
+  "pgbackrest_package_name": "pgbackrest",
+  "pgbackrest_user": "pgbackrest",
+  "pgbackrest_group": "pgbackrest",
+  "pgbackrest_configuration_file": "/etc/pgbackrest.conf",
+  "pgbackrest_home": "/var/lib/pgbackrest",
+  "repo_cipher_password": "cluster-lifecycle-test-passphrase",
+  "_comment_failover": "Automatic failover is disabled, matching the deployment. The collection DEFAULTS repmgr_failover to 'automatic', so leaving this unset gives you repmgrd promoting a standby on its own -- which is finding EDB-01, and which was observed here: repmgrd promoted a node before the test's manual promotion ran, and repmgr then refused the second promotion.",
+  "repmgr_failover": "manual"
+}

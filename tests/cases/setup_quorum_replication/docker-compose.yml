@@ -1,0 +1,129 @@
+version: '3'
+
+services:
+  ansible-tester:
+    build:
+      context: ../../docker
+      dockerfile: Dockerfile.ansible-tester
+      args:
+        ansible_core_version: "${ANSIBLE_CORE_VERSION}"
+        TESTER_BASE_IMAGE: "${TESTER_BASE_IMAGE:-debian:11-slim}"
+        APT_MIRROR: "${APT_MIRROR:-}"
+        APT_SECURITY_MIRROR: "${APT_SECURITY_MIRROR:-}"
+        PIP_INDEX: "${PIP_INDEX_URL:-}"
+        PIP_TRUSTED: "${PIP_TRUSTED_HOST:-}"
+        GALAXY_SERVER: "${ANSIBLE_GALAXY_SERVER:-}"
+    environment:
+    - EDB_REPO_USERNAME="${EDB_REPO_USERNAME:- }"
+    - EDB_REPO_PASSWORD="${EDB_REPO_PASSWORD:- }"
+    - EDB_REPO_TOKEN="${EDB_REPO_TOKEN:- }"
+    - EDB_ENABLE_REPO=${EDB_ENABLE_REPO:-true}
+    - EDB_PG_TYPE
+    - EDB_PG_VERSION
+    # Passed through so a small host can serialise dnf, which is the
+    # memory spike. Without this the container silently defaults to 10.
+    - ANSIBLE_FORKS=${ANSIBLE_FORKS:-10}
+    - CASE_NAME=setup_quorum_replication
+    - EDB_OS
+    - ANSIBLE_CORE_VERSION="${ANSIBLE_CORE_VERSION:-2.13}"
+    # Set by `run-case.sh --tests-only` to re-run pytest against a
+    # cluster that is already deployed.
+    - SKIP_PLAYBOOK=${SKIP_PLAYBOOK:-false}
+    - PYTEST_ARGS=${PYTEST_ARGS:-}
+    # Offline mode: skip the roles that need a package repository.
+    - PREINSTALLED=${PREINSTALLED:-false}
+    volumes:
+    - ../../..:/workspace:z
+    command: "/workspace/tests/docker/exec-tests.sh"
+  primary1-rhel9:
+    privileged: true
+    build:
+      context: ../../docker
+      dockerfile: Dockerfile.rhel9
+      args:
+        rhel9_image_tag: "${RHEL9_IMAGE_TAG:-9.7}"
+        RHEL_BASE_IMAGE: "${RHEL_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi-init:${RHEL9_IMAGE_TAG:-9.7}}"
+        YUM_BASEURL: "${YUM_BASEURL:-}"
+        YUM_GPGCHECK: "${YUM_GPGCHECK:-1}"
+    cap_add:
+    - SYS_ADMIN
+    # systemd needs a writable cgroup tree rooted at the host hierarchy. The
+    # older `- /sys/fs/cgroup:ro` form used by the other test cases only works
+    # on cgroup v1 hosts; this form works on both v1 and v2.
+    cgroup: host
+    volumes:
+    - .:/workspace:z
+    - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+    - /run
+    - /run/lock
+    command: /usr/sbin/init
+  standby1-rhel9:
+    privileged: true
+    build:
+      context: ../../docker
+      dockerfile: Dockerfile.rhel9
+      args:
+        rhel9_image_tag: "${RHEL9_IMAGE_TAG:-9.7}"
+        RHEL_BASE_IMAGE: "${RHEL_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi-init:${RHEL9_IMAGE_TAG:-9.7}}"
+        YUM_BASEURL: "${YUM_BASEURL:-}"
+        YUM_GPGCHECK: "${YUM_GPGCHECK:-1}"
+    cap_add:
+    - SYS_ADMIN
+    # systemd needs a writable cgroup tree rooted at the host hierarchy. The
+    # older `- /sys/fs/cgroup:ro` form used by the other test cases only works
+    # on cgroup v1 hosts; this form works on both v1 and v2.
+    cgroup: host
+    volumes:
+    - .:/workspace:z
+    - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+    - /run
+    - /run/lock
+    command: /usr/sbin/init
+  standby2-rhel9:
+    privileged: true
+    build:
+      context: ../../docker
+      dockerfile: Dockerfile.rhel9
+      args:
+        rhel9_image_tag: "${RHEL9_IMAGE_TAG:-9.7}"
+        RHEL_BASE_IMAGE: "${RHEL_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi-init:${RHEL9_IMAGE_TAG:-9.7}}"
+        YUM_BASEURL: "${YUM_BASEURL:-}"
+        YUM_GPGCHECK: "${YUM_GPGCHECK:-1}"
+    cap_add:
+    - SYS_ADMIN
+    # systemd needs a writable cgroup tree rooted at the host hierarchy. The
+    # older `- /sys/fs/cgroup:ro` form used by the other test cases only works
+    # on cgroup v1 hosts; this form works on both v1 and v2.
+    cgroup: host
+    volumes:
+    - .:/workspace:z
+    - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+    - /run
+    - /run/lock
+    command: /usr/sbin/init
+  standby3-rhel9:
+    privileged: true
+    build:
+      context: ../../docker
+      dockerfile: Dockerfile.rhel9
+      args:
+        rhel9_image_tag: "${RHEL9_IMAGE_TAG:-9.7}"
+        RHEL_BASE_IMAGE: "${RHEL_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi-init:${RHEL9_IMAGE_TAG:-9.7}}"
+        YUM_BASEURL: "${YUM_BASEURL:-}"
+        YUM_GPGCHECK: "${YUM_GPGCHECK:-1}"
+    cap_add:
+    - SYS_ADMIN
+    # systemd needs a writable cgroup tree rooted at the host hierarchy. The
+    # older `- /sys/fs/cgroup:ro` form used by the other test cases only works
+    # on cgroup v1 hosts; this form works on both v1 and v2.
+    cgroup: host
+    volumes:
+    - .:/workspace:z
+    - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+    - /run
+    - /run/lock
+    command: /usr/sbin/init

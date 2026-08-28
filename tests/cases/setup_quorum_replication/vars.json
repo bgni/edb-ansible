@@ -1,0 +1,15 @@
+{
+  "use_hostname": false,
+  "pg_data": "/opt/pgdata",
+  "pg_wal": "/opt/pgwal",
+
+  "_comment_sync": "synchronous_standby_names is deliberately left empty so the role has to build the quorum from the fields below. Declaring the finished string here instead would take the literal branch in primary_synchronous_param.yml and skip the generator and its validation asserts entirely, so the test would no longer cover the code it is meant to cover.",
+  "synchronous_standby_names": "",
+  "synchronous_standby_application_names": [
+    "standby1",
+    "standby2",
+    "standby3"
+  ],
+  "synchronous_standby_num_sync": 2,
+  "standby_quorum_type": "ANY"
+}

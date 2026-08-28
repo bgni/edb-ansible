@@ -54,4 +54,4 @@
   ansible.builtin.set_fact:
     _pgbackrest_server_info: ""
     _pgbackrest_server_private_ip: ""
-    _pg_postgres_conf_params: ""
+    _pg_postgres_conf_params: []

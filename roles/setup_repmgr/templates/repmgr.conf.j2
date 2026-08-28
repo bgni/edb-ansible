@@ -45,7 +45,7 @@ conninfo='dbname={{ pg_repmgr_dbname }} user={{ pg_repmgr_user }} port={{ pg_por
 				 # connection attempt is abandoned; for details see:
 				 #  https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-CONNECT-TIMEOUT
 
-data_directory='{{ pg_data }}'		 # The node's data directory. This is needed by repmgr
+data_directory='{{ _repmgr_pg_data | default(pg_data) }}'		 # The node's data directory. This is needed by repmgr
 				 # when performing operations when the PostgreSQL instance
 				 # is not running and there's no other way of determining
 				 # the data directory.

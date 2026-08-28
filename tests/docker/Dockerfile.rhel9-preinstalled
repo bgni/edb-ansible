@@ -1,0 +1,119 @@
+# syntax=docker/dockerfile:1
+
+# RHEL 9 node with the whole package set already installed.
+#
+# WHY
+#
+# Only two of the roles reach the network: setup_repo adds the PGDG and EPEL
+# repositories, and install_dbserver (plus the package steps of setup_repmgr,
+# setup_pgbackrest, setup_haproxy and postgres-cluster-xinetd) install from
+# them. Everything after that -- init_dbserver, setup_replication,
+# manage_dbserver, the identity maps, the HBA rules, the synchronous policy --
+# is pure configuration and touches no repository at all.
+#
+# Most changes land in that second group, so most test runs do not need a
+# package repository. Baking the packages in once means those runs work with no
+# mirror, no Artifactory and no internet, and they skip the slowest phase of
+# the deploy.
+#
+# BUILDING IT (needs repository access, once)
+#
+#   docker build -f tests/docker/Dockerfile.rhel9-preinstalled \
+#       --build-arg pg_version=17 \
+#       -t localhost/edb-ansible/rhel9-pg17:local tests/docker
+#
+# In an air-gapped environment build it where the mirrors are reachable and
+# push it to your registry, then point PREINSTALLED_IMAGE at it.
+#
+# USING IT (needs nothing)
+#
+#   PREINSTALLED_IMAGE=localhost/edb-ansible/rhel9-pg17:local \
+#       ./tests/run-case.sh prod_topology rhel9 --preinstalled
+#
+# The case then skips setup_repo and install_dbserver. Anything the playbook
+# installs that is missing here fails loudly rather than silently reaching for
+# a repository, which is the behaviour you want when validating an air gap.
+ARG rhel9_image_tag=9.7
+ARG RHEL_BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-init:${rhel9_image_tag}
+FROM ${RHEL_BASE_IMAGE}
+
+ARG YUM_BASEURL=""
+ARG YUM_GPGCHECK=1
+ARG pg_version=17
+# The PGDG repository RPM. Override for an internal mirror.
+ARG PGDG_REPO_RPM=https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+ARG EPEL_REPO_RPM=https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
+
+RUN if [ -n "${YUM_BASEURL}" ]; then \
+      for f in /etc/yum.repos.d/*.repo; do \
+        [ -e "$f" ] || continue; \
+        sed -i 's/^enabled[[:space:]]*=.*/enabled=0/' "$f"; \
+      done; \
+      printf '%s\n' \
+        '[airgap]' 'name=Internal mirror' "baseurl=${YUM_BASEURL}" \
+        'enabled=1' "gpgcheck=${YUM_GPGCHECK}" \
+        > /etc/yum.repos.d/airgap.repo; \
+    fi
+
+RUN (cd /lib/systemd/system/sysinit.target.wants/; for i in *; do [ $i == \
+systemd-tmpfiles-setup.service ] || rm -f $i; done); \
+rm -f /lib/systemd/system/multi-user.target.wants/*;\
+rm -f /etc/systemd/system/*.wants/*;\
+rm -f /lib/systemd/system/local-fs.target.wants/*; \
+rm -f /lib/systemd/system/sockets.target.wants/*udev*; \
+rm -f /lib/systemd/system/sockets.target.wants/*initctl*; \
+rm -f /lib/systemd/system/basic.target.wants/*;\
+rm -f /lib/systemd/system/anaconda.target.wants/*;
+
+# Base tooling, as in Dockerfile.rhel9.
+RUN dnf install -y \
+      ca-certificates glibc-langpack-en hostname iproute \
+      openssh-clients openssh-server policycoreutils procps-ng \
+      python3 python3-libselinux python3-libsemanage sudo which \
+    && dnf clean all
+
+# The repositories the roles would otherwise add themselves.
+RUN dnf install -y "${PGDG_REPO_RPM}" "${EPEL_REPO_RPM}" \
+    && dnf -qy module disable postgresql || true
+
+# Everything the deployment installs, in one place. Keep this list in step with
+# the roles: a package missing here surfaces as a failure during the offline
+# run, which is the point.
+# The Python bindings install_dbserver puts on every node. Without
+# python3-psycopg2 every community.postgresql module fails with "Failed to
+# import the required Python library (psycopg2)" -- which is what happens when
+# this image is used and install_dbserver is skipped.
+RUN dnf install -y \
+      python3-pycurl \
+      python3-psycopg2 \
+    && dnf clean all
+
+RUN dnf install -y \
+      "postgresql${pg_version}-server" \
+      "postgresql${pg_version}-contrib" \
+      "sslutils_${pg_version}" \
+      "repmgr_${pg_version}" \
+      pgbackrest \
+      haproxy \
+    && dnf clean all
+
+# Deliberately no xinetd: RHEL 9 dropped the package, and
+# postgres-cluster-xinetd installs it only when ansible_os_family != 'RedHat'
+# -- on RHEL the health endpoint is a systemd socket-activated service instead.
+# Adding it here would fail the build with "No match for argument: xinetd".
+
+# NOTE: the repositories are deliberately left enabled. setup_repmgr,
+# setup_pgbackrest and setup_haproxy call dnf even when their package is
+# already installed, and dnf will not run at all with no enabled repository
+# ("There are no enabled repositories"). Leaving them on keeps those roles
+# working; the packages are already present so nothing is downloaded.
+#
+# This is why --preinstalled removes the *package installation* from the run,
+# not every network call. The configuration roles -- init_dbserver,
+# setup_replication, manage_dbserver -- are the network-free part, and that is
+# what the mode is for.
+
+# Recorded so the offline run can assert it is using the image it expects.
+RUN printf 'pg_version=%s\n' "${pg_version}" > /etc/edb-ansible-preinstalled
+
+STOPSIGNAL SIGRTMIN+3

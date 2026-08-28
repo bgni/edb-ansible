@@ -80,7 +80,12 @@
     path: "{{ pg_user_home + '/.ssh/known_hosts' }}"
     name: "{{ _ssh_local_keyname }}"
     key: "{{ _item }}"
-  with_items: "{{ _remote_ssh_keyscan_output.stdout_lines }}"
+  # ssh-keyscan writes a "# <host>:<port> SSH-2.0-..." banner for each host it
+  # probes. OpenSSH 8.7 and later put those on stdout, so they end up in
+  # stdout_lines and the known_hosts module rejects them with "Host parameter
+  # does not match hashed host field in supplied key". Keep only real key
+  # lines.
+  with_items: "{{ _remote_ssh_keyscan_output.stdout_lines | reject('match', '^\\s*(#|$)') | list }}"
   loop_control:
     loop_var: _item
   delegate_to: "{{ remote_node.inventory_hostname }}"
@@ -99,7 +104,8 @@
     path: "{{ pg_user_home + '/.ssh/known_hosts' }}"
     name: "{{ _ssh_remote_keyname }}"
     key: "{{ _item }}"
-  with_items: "{{ _local_ssh_keyscan_output.stdout_lines }}"
+  # Same ssh-keyscan banner filtering as above.
+  with_items: "{{ _local_ssh_keyscan_output.stdout_lines | reject('match', '^\\s*(#|$)') | list }}"
   loop_control:
     loop_var: _item
   become: true

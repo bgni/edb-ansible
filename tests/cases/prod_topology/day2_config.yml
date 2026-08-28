@@ -1,0 +1,23 @@
+---
+# Day-two configuration change.
+#
+# Re-runs manage_dbserver against an already deployed cluster with a changed
+# `pg_postgres_conf_params`, which is how an operator applies a PostgreSQL
+# configuration update after the initial deploy. The role decides on its own
+# whether the change can be reloaded or needs a restart.
+#
+# Driven by tests/tests/test_prod_topology_day2.py, which passes the parameter
+# to change through --extra-vars. It is a separate playbook rather than a
+# second play in playbook.yml so that the deploy and the day-two change are
+# distinct events, and the tests can assert what changed between them.
+- hosts: primary,standby
+  name: Day-two Postgres configuration change
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+
+  collections:
+    - edb_devops.edb_postgres
+
+  roles:
+    - role: manage_dbserver

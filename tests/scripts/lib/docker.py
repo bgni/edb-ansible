@@ -1,8 +1,37 @@
 import json
+import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
+
+
+def container_engine():
+    configured = os.getenv('CONTAINER_ENGINE')
+    if configured:
+        return configured
+    for candidate in ('podman', 'docker'):
+        if shutil.which(candidate):
+            return candidate
+    raise RuntimeError(
+        "No container engine found; install Podman or Docker, or set "
+        "CONTAINER_ENGINE"
+    )
+
+
+def run(command, cwd=None):
+    cp = subprocess.run(
+        command,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if cp.returncode != 0:
+        raise RuntimeError(
+            "%s failed: %s" % (' '.join(command), cp.stderr.decode('utf-8'))
+        )
+    return cp.stdout
 
 
 class DockerInventory():
@@ -11,25 +40,26 @@ class DockerInventory():
         self.containers = []
 
     def discover(self):
-        # need to define command required as string to pass in pipe filter '|'
-        # format definition required to only obtain information required (ID and Service)
-        # if all information was returned, the json.loads() could not parse b_output
-        # the issue was an item: "Command": "\"/usr/sbin/init\"" that is not in proper json format
-        # with docker compose 2.21 "docker compose ps --format json" no longer returns proper json
-        # add "| jq -s" to format output into json format that json.loads() will parse correctly
-        cmd = "docker compose ps --format='{\"ID\": \"{{ .ID }}\", \"Service\": \"{{ .Service }}\"}' | jq -s"
+        engine = container_engine()
+        output = run([engine, 'compose', 'ps', '-q'], cwd=self.cwd)
+        ids = [line for line in output.decode('utf-8').splitlines() if line]
 
-        cp = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=self.cwd)
-        # cp.communicate() returns a tuple (cp.stdout, cp.stderr)
-        # to get cp.stdout, use index 0
-        b_output = cp.communicate()[0]
-
-        # to show cp.stderr, use the index 1
-        if cp.returncode != 0:
-            raise Exception(cp.communicate()[1].decode("utf-8"))
-
-        if len(b_output) > 0:
-            self.containers = json.loads(b_output)
+        self.containers = []
+        for container_id in ids:
+            inspect = json.loads(
+                run([engine, 'inspect', container_id]).decode('utf-8')
+            )[0]
+            labels = inspect.get('Config', {}).get('Labels') or {}
+            service = (
+                labels.get('com.docker.compose.service')
+                or labels.get('io.podman.compose.service')
+            )
+            if not service:
+                raise RuntimeError(
+                    "Unable to determine Compose service for container %s"
+                    % container_id
+                )
+            self.containers.append({'ID': container_id, 'Service': service})
 
 
 class DockerContainer():
@@ -43,22 +73,11 @@ class DockerContainer():
     def exec(self, command):
         self.log("Executing %s" % command)
         a_command = shlex.split(command)
-        cp = subprocess.run(
-            ['docker', 'exec', self.id] + a_command,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        )
-        if cp.returncode != 0:
-            raise Exception(cp.stderr.decode('utf-8'))
-        return cp.stdout
+        return run([container_engine(), 'exec', self.id] + a_command)
 
     def send_file(self, local, dest):
         self.log("Copying local file %s to remote %s" % (local, dest))
-        cp = subprocess.run(
-            ['docker', 'cp', local, '%s:%s' % (self.id, dest)],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        )
-        if cp.returncode != 0:
-            raise Exception(cp.stderr.decode('utf-8'))
+        run([container_engine(), 'cp', str(local), '%s:%s' % (self.id, dest)])
 
     def ip(self):
         b_output = self.exec('/sbin/ip addr show eth0')
@@ -106,6 +125,10 @@ class DockerRocky9Container(DockerCentosContainer):
 
 
 class DockerRHEL8Container(DockerCentosContainer):
+    pass
+
+
+class DockerRHEL9Container(DockerCentosContainer):
     pass
 
 
@@ -176,6 +199,8 @@ def DockerOSContainer(id, os):
         return DockerRocky9Container(id)
     elif os == 'rhel8':
         return DockerRHEL8Container(id)
+    elif os == 'rhel9':
+        return DockerRHEL9Container(id)
     elif os == 'almalinux8':
         return DockerAlmalinux8Container(id)
     elif os == 'debian9':

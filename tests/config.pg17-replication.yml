@@ -1,0 +1,9 @@
+---
+cases:
+  setup_replication:
+    pg_version:
+      - 17
+    pg_type:
+      - PG
+    os:
+      - rhel9

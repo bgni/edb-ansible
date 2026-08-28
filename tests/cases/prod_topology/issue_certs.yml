@@ -1,0 +1,149 @@
+---
+# Issues the PKI the mTLS tests need, on the control node.
+#
+# This stands in for the local ACME server in the target deployment. The
+# collection has no ACME integration, so certificates are issued outside it and
+# handed in through the pg_ssl_*_file variables -- which is exactly how a
+# certbot-issued chain would reach PostgreSQL. What is under test is the
+# identity map and HBA configuration the collection applies, not the issuer.
+#
+# One CA signs everything: a server certificate per database node, and one
+# client certificate whose Common Name is the PostgreSQL role it should
+# authenticate as. A CRL is issued from the same CA because init_dbserver
+# points ssl_crl_file at root.crl; without one it would be generated from the
+# unrelated sslutils CA and client verification would fail.
+- name: Create the certificate directory
+  ansible.builtin.file:
+    path: "{{ tls_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Create the CA private key
+  community.crypto.openssl_privatekey:
+    path: "{{ tls_dir }}/ca.key"
+    size: 2048
+    mode: "0600"
+
+- name: Create the CA signing request
+  community.crypto.openssl_csr:
+    path: "{{ tls_dir }}/ca.csr"
+    privatekey_path: "{{ tls_dir }}/ca.key"
+    common_name: "{{ tls_ca_common_name }}"
+    basic_constraints:
+      - "CA:TRUE"
+    basic_constraints_critical: true
+    key_usage:
+      - keyCertSign
+      - cRLSign
+      - digitalSignature
+    key_usage_critical: true
+
+- name: Create the CA certificate
+  community.crypto.x509_certificate:
+    path: "{{ tls_dir }}/ca.crt"
+    privatekey_path: "{{ tls_dir }}/ca.key"
+    csr_path: "{{ tls_dir }}/ca.csr"
+    provider: selfsigned
+    selfsigned_not_after: "+3650d"
+    mode: "0644"
+
+# Empty, but signed by the same CA, so ssl_crl_file is consistent with the
+# certificates being verified against it.
+- name: Create the certificate revocation list
+  # No `mode:` here. On community.crypto's x509_crl, `mode` selects the module's
+  # operating mode (generate/update), not the file permission bits.
+  community.crypto.x509_crl:
+    path: "{{ tls_dir }}/root.crl"
+    privatekey_path: "{{ tls_dir }}/ca.key"
+    issuer:
+      CN: "{{ tls_ca_common_name }}"
+    last_update: "+0d"
+    next_update: "+3650d"
+    revoked_certificates: []
+
+- name: Make the revocation list readable
+  ansible.builtin.file:
+    path: "{{ tls_dir }}/root.crl"
+    mode: "0644"
+
+- name: Create the server private keys
+  community.crypto.openssl_privatekey:
+    path: "{{ tls_dir }}/{{ item }}.key"
+    size: 2048
+    mode: "0600"
+  loop: "{{ tls_server_nodes }}"
+
+- name: Create the server signing requests
+  community.crypto.openssl_csr:
+    path: "{{ tls_dir }}/{{ item }}.csr"
+    privatekey_path: "{{ tls_dir }}/{{ item }}.key"
+    common_name: "{{ item }}"
+    subject_alt_name: "{{ ['DNS:' + item] + ['IP:' + hostvars[item].private_ip] }}"
+    extended_key_usage:
+      - serverAuth
+  loop: "{{ tls_server_nodes }}"
+
+- name: Create the server certificates
+  community.crypto.x509_certificate:
+    path: "{{ tls_dir }}/{{ item }}.crt"
+    csr_path: "{{ tls_dir }}/{{ item }}.csr"
+    provider: ownca
+    ownca_path: "{{ tls_dir }}/ca.crt"
+    ownca_privatekey_path: "{{ tls_dir }}/ca.key"
+    ownca_not_after: "+3650d"
+    mode: "0644"
+  loop: "{{ tls_server_nodes }}"
+
+# The client certificate. Its Common Name is what the identity map matches on,
+# so it is deliberately *not* the PostgreSQL role name -- the map is what
+# translates one into the other, and a test where they were equal would pass
+# even if the map were ignored.
+- name: Create the client private key
+  community.crypto.openssl_privatekey:
+    path: "{{ tls_dir }}/client.key"
+    size: 2048
+    mode: "0644"
+
+- name: Create the client signing request
+  community.crypto.openssl_csr:
+    path: "{{ tls_dir }}/client.csr"
+    privatekey_path: "{{ tls_dir }}/client.key"
+    common_name: "{{ tls_client_common_name }}"
+    extended_key_usage:
+      - clientAuth
+
+- name: Create the client certificate
+  community.crypto.x509_certificate:
+    path: "{{ tls_dir }}/client.crt"
+    csr_path: "{{ tls_dir }}/client.csr"
+    provider: ownca
+    ownca_path: "{{ tls_dir }}/ca.crt"
+    ownca_privatekey_path: "{{ tls_dir }}/ca.key"
+    ownca_not_after: "+3650d"
+    mode: "0644"
+
+# A second client certificate that the map does not mention, used to prove the
+# map is actually consulted rather than any CA-signed certificate being let in.
+- name: Create the unmapped client private key
+  community.crypto.openssl_privatekey:
+    path: "{{ tls_dir }}/unmapped.key"
+    size: 2048
+    mode: "0644"
+
+- name: Create the unmapped client signing request
+  community.crypto.openssl_csr:
+    path: "{{ tls_dir }}/unmapped.csr"
+    privatekey_path: "{{ tls_dir }}/unmapped.key"
+    common_name: "{{ tls_unmapped_common_name }}"
+    extended_key_usage:
+      - clientAuth
+
+- name: Create the unmapped client certificate
+  community.crypto.x509_certificate:
+    path: "{{ tls_dir }}/unmapped.crt"
+    csr_path: "{{ tls_dir }}/unmapped.csr"
+    provider: ownca
+    ownca_path: "{{ tls_dir }}/ca.crt"
+    ownca_privatekey_path: "{{ tls_dir }}/ca.key"
+    ownca_not_after: "+3650d"
+    mode: "0644"

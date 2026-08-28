@@ -1,0 +1,38 @@
+{
+  "use_hostname": false,
+  "pg_data": "/opt/pgdata",
+  "pg_wal": "/opt/pgwal",
+
+  "_comment_sync": "The quorum is declared once, here, and both the deployment and the assertions read this single declaration. num_sync is 2, not the role default of 1: with three standbys, ANY 2 keeps two remote durable copies and still tolerates one standby outage, which is the policy the production-readiness review recommends for a consistency-first design. Leaving synchronous_standby_names empty is deliberate -- it forces the role to build the value from the fields below, so the generator and its assertions are actually exercised.",
+  "synchronous_standby_names": "",
+  "synchronous_standby_application_names": [
+    "standby1",
+    "standby2",
+    "standby3"
+  ],
+  "synchronous_standby_num_sync": 2,
+  "standby_quorum_type": "ANY",
+
+  "_comment_tls": "TLS is on, using a CA issued by issue_certs.yml on the control node. That CA stands in for the deployment's local ACME server: the collection has no ACME integration, so certificates are issued outside it and handed in through the pg_ssl_*_file variables, which is how a certbot-issued chain would reach PostgreSQL. tls_dir lives under the case directory, which is mounted into the tester container.",
+  "pg_ssl": true,
+  "tls_dir": "/workspace/tests/cases/prod_topology/certs",
+  "tls_ca_common_name": "prod-topology-test-ca",
+
+  "_comment_mtls": "The client certificate's Common Name is deliberately NOT the PostgreSQL role name. The identity map is what translates one into the other, so a test where they were equal would still pass if the map were ignored entirely.",
+  "tls_client_common_name": "prod-topology-client",
+  "tls_unmapped_common_name": "prod-topology-unmapped",
+  "mtls_pg_user": "mtls_app",
+  "mtls_map_name": "mtls",
+
+  "_comment_pgbackrest": "pgBackRest encrypts its repository by default (repo_cipher_type aes-256-cbc) and refuses to configure without a passphrase, so repo_cipher_password has to be set. A throwaway value is fine here; a real deployment supplies this from its secret store.",
+  "pgbackrest_package_name": "pgbackrest",
+  "pgbackrest_user": "pgbackrest",
+  "pgbackrest_group": "pgbackrest",
+  "pgbackrest_configuration_file": "/etc/pgbackrest.conf",
+  "pgbackrest_home": "/var/lib/pgbackrest",
+  "repo_cipher_password": "prod-topology-test-passphrase",
+
+  "_comment_failover": "repmgr_failover is left at the role default so the deployment test observes the shipped behaviour rather than a corrected one. test_prod_topology.py asserts what the default actually produces (finding EDB-01).",
+
+  "_comment_no_pg_users": "Do NOT define pg_users here. setup_replication creates its replication user by calling manage_dbserver with `include_role` and `vars: pg_users: [repuser]`, and --extra-vars outrank include_role vars. A pg_users key in this file therefore replaces that list everywhere, repuser is never created, and the deployment fails later with `Role 'repuser' does not exist` while granting the pg_rewind privileges. Roles needed by the tests are created by the mTLS play in playbook.yml, which passes pg_users through include_role rather than as an extra var."
+}

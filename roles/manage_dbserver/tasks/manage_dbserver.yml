@@ -29,6 +29,10 @@
       ansible.builtin.import_tasks: manage_slots.yml
     - name: Import manage_postgres_params
       ansible.builtin.import_tasks: manage_postgres_params.yml
+    # Before the HBA: an HBA line using `map=` is rejected on reload if the map
+    # it names does not exist yet.
+    - name: Import manage_ident_conf
+      ansible.builtin.import_tasks: manage_ident_conf.yml
     - name: Import manage_hba_conf
       ansible.builtin.import_tasks: manage_hba_conf.yml
 

@@ -20,9 +20,13 @@
 DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 EDB_ANSIBLE_VERSION ?= $(shell cat $(DIR)/VERSION | head -n 1)
 
+# --force so that rebuilding over an existing tarball works. Without it
+# ansible-galaxy fails with "the file already exists", and because the test
+# harness installs the collection *from that tarball*, a re-run after editing a
+# role would silently exercise the previous build.
 build:
 	sed -E 's/version:.*/version: "$(EDB_ANSIBLE_VERSION)"/g' $(DIR)/galaxy.template.yml > $(DIR)/galaxy.yml
-	ansible-galaxy collection build $(DIR)
+	ansible-galaxy collection build --force $(DIR)
 
 publish:
 	ansible-galaxy collection publish --api-key $(API_KEY) $(DIR)/edb_devops-edb_postgres-$(EDB_ANSIBLE_VERSION).tar.gz

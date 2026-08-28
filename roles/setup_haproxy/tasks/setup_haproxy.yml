@@ -60,6 +60,12 @@
     name: haproxy_connect_any
     state: true
     persistent: true
+  # seboolean fails outright with "SELinux is disabled on this host" rather
+  # than skipping, so the role could not complete anywhere SELinux is off --
+  # a container, or a site that disables it by policy. There is also no boolean
+  # to set in that case, so skipping is the correct behaviour rather than a
+  # workaround.
+  when: ansible_selinux.status | default('disabled') == 'enabled'
 
 - name: Enable and start systemd service
   ansible.builtin.systemd:

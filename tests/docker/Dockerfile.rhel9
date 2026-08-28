@@ -1,0 +1,85 @@
+# syntax=docker/dockerfile:1
+
+# RedHat Enterprise Linux 9 test container.
+#
+# The Universal Base Image is used by default because it is redistributable and
+# needs no subscription. The `ubi-init` flavour ships systemd, which the roles
+# managing the Postgres systemd units require.
+#
+# AIR-GAPPED USE
+#
+# Everything this image reaches for is overridable:
+#
+#   RHEL_BASE_IMAGE  the base image, e.g. artifactory/docker-remote/ubi9/ubi-init:9.7
+#   YUM_BASEURL      an internal yum mirror. When set, every repository the
+#                    base image ships is disabled and a single repository
+#                    pointing at this URL is used instead.
+#   YUM_GPGCHECK     0 to disable GPG checking against the mirror (default 1)
+#
+# Nothing else in this file contacts the network.
+ARG rhel9_image_tag=9.7
+ARG RHEL_BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-init:${rhel9_image_tag}
+FROM ${RHEL_BASE_IMAGE}
+
+ARG YUM_BASEURL=""
+ARG YUM_GPGCHECK=1
+
+# Point dnf at the internal mirror when one is given. The shipped repositories
+# are disabled rather than deleted so the image still documents where its
+# content would have come from.
+RUN if [ -n "${YUM_BASEURL}" ]; then \
+      for f in /etc/yum.repos.d/*.repo; do \
+        [ -e "$f" ] || continue; \
+        sed -i 's/^enabled[[:space:]]*=.*/enabled=0/' "$f"; \
+      done; \
+      printf '%s\n' \
+        '[airgap]' \
+        'name=Internal mirror' \
+        "baseurl=${YUM_BASEURL}" \
+        'enabled=1' \
+        "gpgcheck=${YUM_GPGCHECK}" \
+        > /etc/yum.repos.d/airgap.repo; \
+    fi
+
+RUN (cd /lib/systemd/system/sysinit.target.wants/; for i in *; do [ $i == \
+systemd-tmpfiles-setup.service ] || rm -f $i; done); \
+rm -f /lib/systemd/system/multi-user.target.wants/*;\
+rm -f /etc/systemd/system/*.wants/*;\
+rm -f /lib/systemd/system/local-fs.target.wants/*; \
+rm -f /lib/systemd/system/sockets.target.wants/*udev*; \
+rm -f /lib/systemd/system/sockets.target.wants/*initctl*; \
+rm -f /lib/systemd/system/basic.target.wants/*;\
+rm -f /lib/systemd/system/anaconda.target.wants/*;
+
+# The distribution postgresql module would shadow the PGDG packages. UBI has no
+# such module, so a failure here is expected and harmless.
+RUN dnf -qy module disable postgresql || true
+
+# One transaction rather than one per package: fewer layers, and a single
+# failure point when a mirror is missing something.
+#
+# The SELinux packages are not optional even though a container does not
+# enforce SELinux: Ansible imports the bindings regardless of whether the
+# policy is active.
+#
+#   python3-libselinux  the file and template modules
+#   python3-libsemanage ansible.posix.seboolean, which setup_haproxy uses to
+#                       set haproxy_connect_any persistently
+#
+# A stock RHEL 9 host has these; the UBI images do not, which is the only
+# reason they are listed here.
+RUN dnf install -y \
+      ca-certificates \
+      glibc-langpack-en \
+      hostname \
+      iproute \
+      openssh-clients \
+      openssh-server \
+      policycoreutils \
+      procps-ng \
+      python3 \
+      python3-libselinux \
+      python3-libsemanage \
+      sudo \
+      which \
+    && dnf clean all

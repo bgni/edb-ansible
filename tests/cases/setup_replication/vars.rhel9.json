@@ -1,0 +1,13 @@
+{
+  "use_hostname": false,
+  "pg_data": "/opt/pgdata",
+  "pg_wal": "/opt/pgwal",
+  "synchronous_standby_application_names": [
+    "postgres01",
+    "postgres02",
+    "postgres03",
+    "postgres04"
+  ],
+  "synchronous_standby_num_sync": 1,
+  "standby_quorum_type": "ANY"
+}

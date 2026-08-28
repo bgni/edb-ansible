@@ -1,0 +1,45 @@
+---
+# Four Postgres nodes, a repmgr witness, and a dedicated pgBackRest repository
+# host. The repository must not share a node with Postgres: setup_pgbackrestserver
+# makes pgbackrest the postgres user's primary group, and manage_dbserver then
+# cannot restore ~/.pgpass to postgres:postgres on a re-run.
+#
+# Application names are set explicitly and are what the synchronous policy
+# refers to, so the tests can assert on them exactly rather than counting
+# connections.
+all:
+  children:
+    primary:
+      hosts:
+        postgres01:
+          ansible_host: {{ inventory_vars['postgres01_ip'] }}
+          private_ip: {{ inventory_vars['postgres01_ip'] }}
+          replication_application_name: postgres01
+          pgbackrest: true
+          pgbackrest_server_private_ip: {{ inventory_vars['pgbackrest1_ip'] }}
+          pgbackrest_archive_method: async
+    standby:
+      hosts:
+{% for n in ['postgres02', 'postgres03', 'postgres04'] %}
+        {{ n }}:
+          ansible_host: {{ inventory_vars[n + '_ip'] }}
+          private_ip: {{ inventory_vars[n + '_ip'] }}
+          replication_application_name: {{ n }}
+          replication_type: synchronous
+          upstream_node_private_ip: {{ inventory_vars['postgres01_ip'] }}
+          pgbackrest: true
+          pgbackrest_server_private_ip: {{ inventory_vars['pgbackrest1_ip'] }}
+          pgbackrest_archive_method: async
+{% endfor %}
+    witness:
+      hosts:
+        witness1:
+          ansible_host: {{ inventory_vars['witness1_ip'] }}
+          private_ip: {{ inventory_vars['witness1_ip'] }}
+          init_dbserver: true
+          upstream_node_private_ip: {{ inventory_vars['postgres01_ip'] }}
+    pgbackrestserver:
+      hosts:
+        pgbackrest1:
+          ansible_host: {{ inventory_vars['pgbackrest1_ip'] }}
+          private_ip: {{ inventory_vars['pgbackrest1_ip'] }}

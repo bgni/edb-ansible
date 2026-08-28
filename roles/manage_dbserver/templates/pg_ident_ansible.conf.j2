@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+#
+# Ansible-managed PostgreSQL identity maps.
+#
+# DO NOT EDIT. This file is generated in full from the `pg_ident_maps` variable
+# on every run, so any manual change here is lost. It is included from the main
+# pg_ident.conf rather than replacing it, which keeps the file the distribution
+# ships untouched and keeps any hand-maintained map outside Ansible's control.
+#
+# Columns are the standard pg_ident.conf ones:
+#
+#   MAPNAME  SYSTEM-USERNAME  PG-USERNAME
+#
+# A SYSTEM-USERNAME beginning with a slash is a regular expression, and \1 in
+# PG-USERNAME refers to its first capture group. For client-certificate (mTLS)
+# authentication the system user name is the certificate's Common Name.
+{% for map in pg_ident_maps %}
+{% if map.state | default('present') == 'present' %}
+{% if map.comment is defined %}
+# {{ map.comment }}
+{% endif %}
+{{ "%-24s %-40s %s" | format(map.mapname, map.system_username, map.pg_username) }}
+{% endif %}
+{% endfor %}

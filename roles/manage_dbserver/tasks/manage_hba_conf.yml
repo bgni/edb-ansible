@@ -20,6 +20,9 @@
     source: "{{ line_item.source }}"
     databases: "{{ line_item.databases | default('all') }}"
     method: "{{ line_item.method | default('scram-sha-256') }}"
+    # Carries the authentication options Postgres puts after the method, most
+    # notably `map=` for an identity map and `clientcert=verify-full` for mTLS.
+    options: "{{ line_item.options | default(omit) }}"
     state: "{{ line_item.state | default('present') }}"
     create: true
   become: true
