@@ -95,6 +95,80 @@ redeploy. The script warns when `PYTEST_ARGS` is unset.
 The Makefile targets still work and are unchanged; the script is an
 alternative entry point, not a replacement.
 
+## Cluster lifecycle test
+
+The end-to-end test of the collection in your working tree: provision a
+cluster, change its configuration while it is running, then kill the primary
+and check that nothing acknowledged was lost.
+
+```shell
+# everything, on a machine with enough memory
+./tests/run-cluster-lifecycle.sh
+
+# on a small machine: no dnf, serialised
+ANSIBLE_FORKS=2 ./tests/run-cluster-lifecycle.sh --preinstalled --keep
+
+# one phase at a time while iterating
+./tests/run-cluster-lifecycle.sh --phase provision,reconfigure --keep
+./tests/run-cluster-lifecycle.sh --clean
+```
+
+Six containers: `postgres01`-`04`, a repmgr witness, and a dedicated pgBackRest
+repository host. The repository needs its own node -- co-locating it on a
+database node makes `setup_pgbackrestserver` give the postgres user
+`pgbackrest` as its *primary* group, after which `manage_dbserver` cannot
+restore `~/.pgpass` and every re-run fails.
+
+The collection is rebuilt from the working tree on every run, so what is
+exercised is your changes rather than a published release. The revision, marked
+`+dirty` when the tree is not clean, is recorded in `results/under-test.json`.
+
+### The three phases
+
+| Phase | What it proves |
+|---|---|
+| `provision` | one writable primary and three streaming standbys under their own application names, the cluster serving reads and writes, repmgr's topology correct, the pgBackRest stanza checking out, and the failover mode matching what was configured |
+| `reconfigure` | re-running the playbook with `synchronous_standby_names` changed from `*` to a named `ANY 1` converges the **running** cluster: the policy in force on every promotion candidate, the running value matching the applied file, nothing pending a restart, no node restarted, and a commit still succeeding with one standby down |
+| `failover` | with a writer running and the primary SIGKILLed mid-transaction, every *acknowledged* transaction is present on the promoted node |
+
+Phase 2 is the one initial deployment cannot substitute for. Deploying straight
+to the final value proves nothing about applying a change to a cluster that is
+already running and serving, which is the operation people actually perform.
+
+### What the failover phase is careful about
+
+**Abrupt, then fenced.** `systemctl stop` alone is graceful and flushes
+everything, which tests nothing about data loss. SIGKILL alone is not a fence:
+the unit ships `Restart=on-failure`, so systemd brings PostgreSQL straight back
+and repmgr then correctly refuses to promote a second primary. The test kills,
+then stops, then asserts the node is still down.
+
+**Acknowledged, not attempted.** A writer appends a token to a file only after
+its commit returned. A transaction still in flight when the primary died leaves
+no token, deliberately: its outcome is undefined and asserting on it would be
+wrong.
+
+**Promotion through repmgr.** `repmgr standby promote`, then `repmgr standby
+follow` on the survivors -- the manual procedure this deployment uses. Raw
+`pg_ctl promote` leaves repmgr's metadata stale and the survivors following a
+dead primary, after which the first synchronous commit blocks forever.
+
+**`ANY 1` is not a promise about any particular node.** It guarantees each
+acknowledged commit reached at least one qualifying standby, not that the node
+you promote has it. The ledger is checked against whichever node is promoted,
+and a survivor missing acknowledged transactions is a failure of the promotion
+procedure rather than something to tolerate.
+
+### Memory
+
+Memory, not CPU, is the constraint. Six systemd containers with five Postgres
+instances plus `dnf` will not fit in 3.3 GB: `dnf` metadata parsing is the
+spike, and concurrent transactions OOM. On a small machine use
+`--preinstalled` (skips the two roles that install packages) and
+`ANSIBLE_FORKS=2`. On a 16 GB runner neither is needed --
+`.github/workflows/cluster-lifecycle.yml` runs it on dispatch with full
+parallelism.
+
 ## Air-gapped and mirrored environments
 
 Everything the harness fetches is redirectable. Start from the example file:
