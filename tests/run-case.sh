@@ -113,8 +113,12 @@ mapfile -t NODES < <("${COMPOSE[@]}" config --services | grep -- "-${EDB_OS}\$" 
 [[ ${#NODES[@]} -gt 0 ]] || die "case ${CASE_NAME} defines no services for os '${EDB_OS}'"
 
 note "Starting ${#NODES[@]} ${EDB_OS} node(s): ${NODES[*]}"
+# --build, because `up` alone reuses an existing image: a change to
+# tests/docker/Dockerfile.<os> would otherwise not reach the nodes and the run
+# would silently test the previous image. Layer caching keeps this cheap when
+# nothing changed.
 for node in "${NODES[@]}"; do
-    "${COMPOSE[@]}" up "${node}" -d
+    "${COMPOSE[@]}" up "${node}" -d --build
 done
 
 note "Preparing SSH and rendering the inventory"

@@ -58,9 +58,16 @@ RUN dnf -qy module disable postgresql || true
 # One transaction rather than one per package: fewer layers, and a single
 # failure point when a mirror is missing something.
 #
-# python3-libselinux is required by Ansible's file and template modules on any
-# host where SELinux is present -- without it the HAProxy configuration tasks
-# fail with "Failed to import the required Python library (libselinux-python)".
+# The SELinux packages are not optional even though a container does not
+# enforce SELinux: Ansible imports the bindings regardless of whether the
+# policy is active.
+#
+#   python3-libselinux  the file and template modules
+#   python3-libsemanage ansible.posix.seboolean, which setup_haproxy uses to
+#                       set haproxy_connect_any persistently
+#
+# A stock RHEL 9 host has these; the UBI images do not, which is the only
+# reason they are listed here.
 RUN dnf install -y \
       ca-certificates \
       glibc-langpack-en \
@@ -68,9 +75,11 @@ RUN dnf install -y \
       iproute \
       openssh-clients \
       openssh-server \
+      policycoreutils \
       procps-ng \
       python3 \
       python3-libselinux \
+      python3-libsemanage \
       sudo \
       which \
     && dnf clean all
