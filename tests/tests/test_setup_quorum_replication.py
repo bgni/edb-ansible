@@ -249,6 +249,14 @@ def count_rows(host, label):
     return int(result.stdout.strip())
 
 
+def row_exists(host, label):
+    """Whether the labelled row is visible right now, without waiting."""
+    result = psql(
+        host, "SELECT count(*) FROM %s WHERE label = '%s'" % (TEST_TABLE, label),
+        timeout=30)
+    return result.rc == 0 and result.stdout.strip() not in ('', '0')
+
+
 def wait_for_row(host, label, timeout=120):
     """
     Waits until a node sees the labelled row. Returns True on success.
@@ -480,9 +488,11 @@ def test_setup_quorum_replication_commits_with_quorum_available():
 def test_setup_quorum_replication_blocks_without_quorum():
     """
     Losing one standby too many leaves fewer candidates than the quorum needs,
-    so a commit must block until a candidate comes back. The transaction is
-    already committed locally while it waits, which is what Postgres documents
-    for synchronous replication.
+    so a commit must block until a candidate comes back.
+
+    While it waits the row is not visible to other sessions, and it becomes
+    visible on the primary and reaches every standby once the quorum is
+    restored.
     """
     primary = get_primary()
     standbys = get_named_hosts('standby')
@@ -519,15 +529,36 @@ def test_setup_quorum_replication_blocks_without_quorum():
             "The commit did not enter a SyncRep wait one candidate short of " \
             "the quorum; pg_stat_activity shows %s" % waiting_backends(primary)
 
-        # Waiting for the quorum happens after the commit is flushed locally,
-        # so the row is already visible on the primary.
-        assert wait_for_row(primary, label), \
-            "The blocked transaction is not visible on the primary"
+        # And it must NOT be visible while it waits.
+        #
+        # An earlier version asserted the opposite, reasoning that the commit
+        # is "already committed locally". That phrase in the PostgreSQL
+        # documentation means durable -- it will be committed after a crash --
+        # not visible. RecordTransactionCommit() marks the xid committed in
+        # clog before SyncRepWaitForLSN(), but ProcArrayEndTransaction() runs
+        # after it, so other sessions' snapshots still see the xid in progress.
+        #
+        # Measured on PostgreSQL 17 with a commit blocked on an unreachable
+        # standby: wait_event IPC/SyncRep, backend_xid still in
+        # pg_stat_activity, and count(*) from the table 0 from another session.
+        #
+        # This direction is deterministic rather than timing-sensitive: the row
+        # cannot become visible until the commit completes, and the commit
+        # cannot complete until the quorum returns.
+        assert not row_exists(primary, label), \
+            "The blocked transaction is visible on the primary before its " \
+            "commit completed"
     finally:
         for name, host in stopped:
             systemctl(host, 'start')
 
     wait_for_streaming_standbys(primary, len(standbys))
+
+    # Once the quorum is back the commit completes, so the row becomes visible
+    # on the primary and reaches every standby.
+    assert wait_for_row(primary, label), \
+        "The transaction never became visible on the primary after the " \
+        "quorum was restored"
 
     for name, host in standbys:
         assert wait_for_row(host, label), \
