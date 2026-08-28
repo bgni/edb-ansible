@@ -8,10 +8,20 @@
 #   tests/run-case.sh --list                    list the available cases
 #
 # --tests-only reuses a cluster that is already up, skipping the image build,
-# the container start and the Ansible deploy. On the prod_topology case a full
-# run is around fourteen minutes and the tests themselves are about eighty
-# seconds, so this is the difference between a coffee break and a normal edit
-# cycle when iterating on a test. Deploy first with KEEP_CONTAINERS=true.
+# the container start and the Ansible deploy: about three minutes instead of
+# fourteen. Deploy first with KEEP_CONTAINERS=true.
+#
+# IMPORTANT: the suite is destructive. The day-two tests stop the primary and
+# promote a standby, and they do not put it back. Re-running the *whole* suite
+# against a cluster that has already been through it fails in bulk -- the tests
+# expect the deployed topology and find a promoted one.
+#
+# So --tests-only is for iterating on a specific test, narrowed with
+# PYTEST_ARGS, not for repeating a full run:
+#
+#     PYTEST_ARGS='-k mtls_unmapped' ./tests/run-case.sh <case> --tests-only
+#
+# For a clean full run, redeploy.
 #
 # Everything the Makefile targets did, in a single script: build the collection
 # tarball, bring the node containers up, prepare SSH between them, render the
@@ -111,6 +121,14 @@ if [[ "${TESTS_ONLY}" == true ]]; then
 already deployed. Run without it first, using KEEP_CONTAINERS=true."
 
     note "Re-running the tests against the existing cluster"
+    if [[ -z "${PYTEST_ARGS:-}" ]]; then
+        printf '%s\n' \
+          "    Note: no PYTEST_ARGS set, so the whole suite will run." \
+          "    If this cluster has already been through the day-two tests its" \
+          "    primary is stopped and a standby promoted, and much of the suite" \
+          "    will fail on that rather than on anything you changed." \
+          "    Narrow it, e.g. PYTEST_ARGS='-k mtls', or redeploy." >&2
+    fi
     export SKIP_PLAYBOOK=true
     "${COMPOSE[@]}" up ansible-tester \
         --force-recreate --abort-on-container-exit \

@@ -64,6 +64,34 @@ container installs the collection from a tarball built there.
 Set `KEEP_CONTAINERS=true` to leave the cluster running after the tests, which
 is useful when a test fails and you want to inspect the nodes.
 
+### Iterating on a test without redeploying
+
+A full run is about fourteen minutes, of which the tests are roughly seventy
+seconds. `--tests-only` reuses a cluster that is already up:
+
+```shell
+$ KEEP_CONTAINERS=true ./tests/run-case.sh prod_topology
+$ PYTEST_ARGS='-k mtls_unmapped' ./tests/run-case.sh prod_topology --tests-only
+```
+
+Narrowed like that it takes seconds rather than minutes.
+
+**The suite is destructive, so narrow it.** The day-two tests stop the primary
+and promote a standby, and they do not put the cluster back. Re-running the
+*whole* suite against a cluster that has already been through it fails in bulk
+-- most tests expect the deployed topology and find a promoted one, which looks
+alarming and has nothing to do with whatever you were changing. Measured on the
+`prod_topology` case:
+
+| | Time | Result on an already-tested cluster |
+|---|---|---|
+| Full deploy and run | ~14 min | 34 passed |
+| `--tests-only`, whole suite | ~3.3 min | 22 failed, 12 passed |
+| `--tests-only` with `PYTEST_ARGS` | ~6 s | the test you asked for |
+
+So `--tests-only` is for iterating on a specific test. For a clean full run,
+redeploy. The script warns when `PYTEST_ARGS` is unset.
+
 The Makefile targets still work and are unchanged; the script is an
 alternative entry point, not a replacement.
 
