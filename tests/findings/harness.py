@@ -15,6 +15,14 @@ import re
 # Repo-relative path of this checker, excluded from every tree search.
 SELF_DIR = os.path.join('tests', 'findings')
 
+# Files that name settings without configuring them. The sanity-check playbook
+# queries pg_settings and reports on what it finds, so every setting it looks
+# for appears in its source -- which made two findings read as FIXED when
+# nothing had changed. Same failure as the checker matching its own source.
+INSPECTION_ONLY = (
+    os.path.join('playbook-examples', 'sanity-check.yml'),
+)
+
 # Where a PostgreSQL setting can actually be *configured*: role defaults, vars,
 # templates and task files, the shipped playbooks, and a test case's vars.json.
 #
@@ -108,7 +116,7 @@ class Repo:
                         continue
                     full = os.path.join(dirpath, name)
                     rel = os.path.relpath(full, self.root)
-                    if rel.startswith(SELF_DIR):
+                    if rel.startswith(SELF_DIR) or rel in INSPECTION_ONLY:
                         continue
                     yield rel
 
