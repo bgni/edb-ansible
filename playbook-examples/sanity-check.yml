@@ -1,0 +1,206 @@
+---
+# Cluster sanity check.
+#
+# Read-only. Queries every promotion-capable node and reports configuration
+# that would cost you data or availability. Changes nothing, so it is safe to
+# run against production at any time.
+#
+#   ansible-playbook -i inventory.yml playbook-examples/sanity-check.yml
+#
+# Every check runs before anything fails, so one run gives the whole picture
+# rather than the first problem alphabetically. Findings are split into errors,
+# which fail the play, and warnings, which are reported and do not.
+#
+# The checks come from defects observed on real deployments, not from a style
+# guide. Each names the condition and why it matters.
+#
+# Tunables (override with -e or in group_vars):
+#
+#   sanity_expected_failover        manual | automatic   (default manual)
+#   sanity_require_restore_command  standbys must have archive fallback (true)
+#   sanity_require_bounded_slots    max_slot_wal_keep_size must be finite (true)
+#   sanity_warn_only                report everything as a warning (false)
+#   sanity_require_all_nodes        an unreachable node fails the run (true)
+- hosts: primary,standby
+  name: Cluster sanity check
+  become: true
+  gather_facts: true
+  any_errors_fatal: false
+
+  vars:
+    sanity_expected_failover: manual
+    sanity_require_restore_command: true
+    sanity_require_bounded_slots: true
+    sanity_warn_only: false
+    # A node that is down is a different thing from a node that is
+    # misconfigured, and saying so matters during a failover when one node is
+    # deliberately fenced. Set false to check whatever is reachable and not
+    # fail on the rest.
+    sanity_require_all_nodes: true
+    _pg_socket: "{{ pg_unix_socket_directories[0] | default('/var/run/postgresql') }}"
+
+  tasks:
+    - name: Read the settings that matter
+      community.postgresql.postgresql_query:
+        login_user: "{{ pg_owner | default('postgres') }}"
+        port: "{{ pg_port | default(5432) }}"
+        login_unix_socket: "{{ _pg_socket }}"
+        db: "{{ pg_database | default('postgres') }}"
+        query: >-
+          SELECT name, setting FROM pg_settings WHERE name IN (
+            'archive_mode', 'archive_command', 'restore_command',
+            'synchronous_standby_names', 'synchronous_commit',
+            'max_slot_wal_keep_size', 'full_page_writes', 'wal_log_hints',
+            'data_checksums'
+          )
+      become: true
+      become_user: "{{ pg_owner | default('postgres') }}"
+      register: _sanity_settings
+      changed_when: false
+      failed_when: false
+
+    - name: Determine whether this node is in recovery
+      community.postgresql.postgresql_query:
+        login_user: "{{ pg_owner | default('postgres') }}"
+        port: "{{ pg_port | default(5432) }}"
+        login_unix_socket: "{{ _pg_socket }}"
+        db: "{{ pg_database | default('postgres') }}"
+        query: "SELECT pg_is_in_recovery() AS in_recovery"
+      become: true
+      become_user: "{{ pg_owner | default('postgres') }}"
+      register: _sanity_role
+      changed_when: false
+      failed_when: false
+
+    - name: Note a node that could not be reached
+      ansible.builtin.set_fact:
+        sanity_unreachable: true
+      when: _sanity_settings.query_result is not defined
+
+    - name: Report a node that could not be reached
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: not reachable, so its configuration was not
+          checked. Down is not the same as misconfigured -- this is reported
+          separately and, with sanity_require_all_nodes, fails separately.
+      when: sanity_unreachable | default(false)
+
+    - name: Flatten the settings into a dictionary
+      when: not (sanity_unreachable | default(false))
+      ansible.builtin.set_fact:
+        pg: >-
+          {{ dict(_sanity_settings.query_result
+                  | map(attribute='name') | list
+                  | zip(_sanity_settings.query_result
+                        | map(attribute='setting') | list)) }}
+        in_recovery: "{{ _sanity_role.query_result[0].in_recovery }}"
+
+    - name: Read the repmgr failover mode
+      when: not (sanity_unreachable | default(false))
+      ansible.builtin.slurp:
+        src: "/etc/repmgr/{{ pg_version }}/repmgr-{{ pg_instance_name | default('main') }}.conf"
+      register: _sanity_repmgr
+      failed_when: false
+
+    - name: Collect the findings for this node
+      when: not (sanity_unreachable | default(false))
+      ansible.builtin.set_fact:
+        sanity_errors: >-
+          {{ (sanity_errors | default([])) + item.problem }}
+      loop:
+        # The archive command is the one that bites silently. archive_mode=on
+        # means a standby never runs it, so an inherited '/bin/true' looks
+        # harmless right up until the node is promoted -- at which point every
+        # WAL segment is reported archived and thrown away, and PITR from the
+        # new primary is broken from that moment.
+        - problem: >-
+            {{ ['archive_command is ' + (pg.archive_command | default('unset') | trim | default('empty', true))
+                + ' -- WAL is discarded, not archived. On a standby this is inert until promotion, then silent data loss.']
+               if (pg.archive_command | default('') | trim) in ['', '/bin/true', 'true', ':']
+               else [] }}
+        - problem: >-
+            {{ ['archive_mode is ' + (pg.archive_mode | default('unset'))
+                + ' -- WAL archiving is off, so there is no PITR chain.']
+               if (pg.archive_mode | default('off')) == 'off' else [] }}
+        # An empty policy on a promotion candidate means that node, once
+        # promoted, acknowledges commits with no synchronous protection.
+        - problem: >-
+            {{ ['synchronous_standby_names is empty -- on promotion this node would acknowledge commits with no synchronous protection.']
+               if (pg.synchronous_standby_names | default('') | trim) == '' else [] }}
+        - problem: >-
+            {{ ['synchronous_commit is ' + (pg.synchronous_commit | default('unset'))
+                + ' -- commits do not wait for a remote flush, so the synchronous policy does not hold.']
+               if (pg.synchronous_commit | default('on')) not in ['on', 'remote_apply'] else [] }}
+        - problem: >-
+            {{ ['repmgr failover is automatic but ' + sanity_expected_failover
+                + ' was expected -- repmgrd will promote on its own, with no fencing.']
+               if (_sanity_repmgr.content is defined
+                   and (_sanity_repmgr.content | b64decode) is search("(?m)^failover\\s*=\\s*'?automatic")
+                   and sanity_expected_failover != 'automatic')
+               else [] }}
+      no_log: false
+
+    - name: Collect the advisory findings for this node
+      when: not (sanity_unreachable | default(false))
+      ansible.builtin.set_fact:
+        sanity_warnings: >-
+          {{ (sanity_warnings | default([])) + item.problem }}
+      loop:
+        # Without restore_command a standby that falls behind its slot cannot
+        # fetch the gap from the archive and needs a full re-clone.
+        - problem: >-
+            {{ ['restore_command is not set -- a standby that falls behind cannot recover from the archive and must be re-cloned.']
+               if (in_recovery | bool
+                   and sanity_require_restore_command | bool
+                   and (pg.restore_command | default('') | trim) == '') else [] }}
+        # -1 lets one down standby pin WAL until pg_wal fills and the primary
+        # stops. A finite value trades that for a re-clone, which is a choice,
+        # not a default to leave unexamined.
+        - problem: >-
+            {{ ['max_slot_wal_keep_size is -1 -- a single down standby can pin WAL until pg_wal fills and the primary stops.']
+               if (sanity_require_bounded_slots | bool
+                   and (pg.max_slot_wal_keep_size | default('-1')) == '-1') else [] }}
+        - problem: >-
+            {{ ['neither data_checksums nor wal_log_hints is on -- pg_rewind cannot be used, so a former primary must be re-cloned.']
+               if ((pg.data_checksums | default('off')) == 'off'
+                   and (pg.wal_log_hints | default('off')) == 'off') else [] }}
+        - problem: >-
+            {{ ['full_page_writes is off -- pg_rewind requires it, and torn-page recovery depends on it.']
+               if (pg.full_page_writes | default('on')) == 'off' else [] }}
+
+    - name: Report this node
+      when: not (sanity_unreachable | default(false))
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} ({{ 'standby' if in_recovery | bool else 'primary' }}):
+          {{ (sanity_errors | default([]) | length) }} error(s),
+          {{ (sanity_warnings | default([]) | length) }} warning(s)
+
+    - name: Show the findings
+      ansible.builtin.debug:
+        msg: "{{ (sanity_errors | default([])) + (sanity_warnings | default([])) }}"
+      when:
+        - not (sanity_unreachable | default(false))
+        - (sanity_errors | default([]) | length) + (sanity_warnings | default([]) | length) > 0
+
+    - name: Fail when a node could not be reached
+      ansible.builtin.fail:
+        msg: >-
+          {{ inventory_hostname }} could not be reached, so nothing about its
+          configuration is known. Pass -e sanity_require_all_nodes=false to
+          check the reachable nodes only.
+      when:
+        - sanity_unreachable | default(false)
+        - sanity_require_all_nodes | bool
+
+    # Fails last, and only after every node has been checked and reported, so
+    # one run shows the whole cluster rather than stopping at the first fault.
+    - name: Fail when a node has an error
+      ansible.builtin.fail:
+        msg: >-
+          {{ inventory_hostname }} failed the sanity check:
+          {{ sanity_errors | join(' | ') }}
+      when:
+        - not (sanity_unreachable | default(false))
+        - not (sanity_warn_only | bool)
+        - sanity_errors | default([]) | length > 0
