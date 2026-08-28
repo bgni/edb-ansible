@@ -11,13 +11,17 @@ x-rhel9-node: &rhel9-node
       YUM_GPGCHECK: "${YUM_GPGCHECK:-1}"
   cap_add:
     - SYS_ADMIN
+  # systemd needs a writable cgroup tree rooted at the host hierarchy. The
+  # older `- /sys/fs/cgroup:ro` form only works on cgroup v1 hosts; this form
+  # works on both v1 and v2.
+  cgroup: host
   volumes:
     - .:/workspace:Z
     - /sys/fs/cgroup:/sys/fs/cgroup:rw
   tmpfs:
     - /run
-    - /tmp
-  command: /sbin/init
+    - /run/lock
+  command: /usr/sbin/init
 
 services:
   ansible-tester:
