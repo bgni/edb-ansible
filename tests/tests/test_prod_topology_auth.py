@@ -87,22 +87,39 @@ def psql_with_cert(host, ip, cert, key, user, query='SELECT current_user'):
         return host.run(command)
 
 
+def node_tls_dir():
+    """
+    Where the issued certificates are visible *on a database node*.
+
+    The mounts differ by container and this is easy to get wrong: the tester
+    mounts the repository root at /workspace, so the certificates are at
+    /workspace/tests/cases/prod_topology/certs there, while every database node
+    mounts only the case directory at /workspace, putting the same files at
+    /workspace/certs.
+    """
+    return '/workspace/certs'
+
+
 def client_material(host):
     """
     Put the client key and certificate on a node with permissions libpq will
     accept, and return their paths.
 
-    libpq refuses a client key that is group- or world-readable.
+    libpq refuses a client key that is group- or world-readable, and silently
+    sends no certificate at all when it cannot read one -- which the server
+    then reports as "connection requires a valid client certificate". The copy
+    is checked here so that a missing source fails loudly instead.
     """
     base = '/var/lib/pgsql/mtls_client'
-    certs = tls_dir()
+    certs = node_tls_dir()
 
     with host.sudo():
         host.run('mkdir -p %s' % base)
-        host.run('cp %s/client.crt %s/client.crt' % (certs, base))
-        host.run('cp %s/client.key %s/client.key' % (certs, base))
-        host.run('cp %s/unmapped.crt %s/unmapped.crt' % (certs, base))
-        host.run('cp %s/unmapped.key %s/unmapped.key' % (certs, base))
+        for name in ('client.crt', 'client.key', 'unmapped.crt', 'unmapped.key'):
+            result = host.run('cp %s/%s %s/%s' % (certs, name, base, name))
+            assert result.rc == 0, \
+                'could not copy %s from %s: %s' % (
+                    name, certs, result.stderr.strip())
         host.run('chown -R %s: %s' % (get_pg_owner(), base))
         host.run('chmod 600 %s/client.key %s/unmapped.key' % (base, base))
 

@@ -571,11 +571,14 @@ def test_prod_topology_mtls_can_add_a_user_on_the_promoted_primary(promoted):
 
     new_role = '%s_after_failover' % mtls_user()
 
-    psql_output(
-        host,
-        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = "
-        "'%s') THEN CREATE ROLE %s LOGIN; END IF; END $$" % (
-            new_role, new_role))
+    # No DO $$ ... $$ block here: the query goes through `psql -c "..."` in a
+    # double-quoted shell string, where $$ expands to the shell's PID and the
+    # statement arrives as `DO 7886 BEGIN ...`. Creating the role directly and
+    # tolerating "already exists" keeps the test shell-safe.
+    result = psql(host, 'CREATE ROLE %s LOGIN' % new_role)
+
+    assert result.rc == 0 or 'already exists' in result.stderr, \
+        '%s: could not create the role: %s' % (name, result.stderr.strip())
 
     assert psql_output(
         host,
