@@ -24,6 +24,10 @@ on:
         default: '17'
 
 env:
+  # Pinned explicitly rather than left to auto-detection. GitHub runners have
+  # both docker and podman installed, and the harness prefers podman when no
+  # engine is named -- but only docker has a working socket here.
+  CONTAINER_ENGINE: docker
   EDB_PG_TYPE: PG
   EDB_PG_VERSION: ${{ github.event.inputs.pg_version || '17' }}
   # PostgreSQL comes from the PGDG repositories, so no EDB repository
