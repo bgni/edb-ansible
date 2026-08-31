@@ -3,7 +3,8 @@
 FROM opensuse/leap:latest
 ENV SSL_CERT_FILE=/etc/ssl/ca-bundle.pem \
     CURL_CA_BUNDLE=/etc/ssl/ca-bundle.pem \
-    REQUESTS_CA_BUNDLE=/etc/ssl/ca-bundle.pem
+    REQUESTS_CA_BUNDLE=/etc/ssl/ca-bundle.pem \
+    PIP_CERT=/etc/ssl/ca-bundle.pem
 RUN --mount=type=secret,id=custom_root_ca,target=/run/secrets/custom-root-ca \
     if [ -s /run/secrets/custom-root-ca ]; then \
       mkdir -p /usr/share/pki/trust/anchors; \
