@@ -23,6 +23,8 @@
 # instead applies the setting only when one was actually given.
 #
 # Collection versions are pinned here and must exist on the Galaxy mirror.
+# TESTER_BASE_IMAGE must stay Debian-based: this file configures apt and the
+# Debian CA trust store directly.
 ARG TESTER_BASE_IMAGE=debian:11-slim
 FROM ${TESTER_BASE_IMAGE}
 ARG CUSTOM_CA_CERT_BASE64=""
