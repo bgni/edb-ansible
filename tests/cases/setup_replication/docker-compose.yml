@@ -9,6 +9,7 @@ x-rhel9-node: &rhel9-node
       RHEL_BASE_IMAGE: "${RHEL_BASE_IMAGE:-registry.access.redhat.com/ubi9/ubi-init:${RHEL9_IMAGE_TAG:-9.7}}"
       YUM_BASEURL: "${YUM_BASEURL:-}"
       YUM_GPGCHECK: "${YUM_GPGCHECK:-1}"
+      CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
   cap_add:
     - SYS_ADMIN
   # systemd needs a writable cgroup tree rooted at the host hierarchy. The
@@ -36,6 +37,7 @@ services:
         PIP_INDEX: "${PIP_INDEX_URL:-}"
         PIP_TRUSTED: "${PIP_TRUSTED_HOST:-}"
         GALAXY_SERVER: "${ANSIBLE_GALAXY_SERVER:-}"
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     environment:
     - EDB_REPO_USERNAME="${EDB_REPO_USERNAME:- }"
     - EDB_REPO_PASSWORD="${EDB_REPO_PASSWORD:- }"
@@ -75,6 +77,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.rocky8
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -86,6 +90,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.rocky8
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -97,6 +103,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.rocky8
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -108,6 +116,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.rocky9
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -119,6 +129,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.rocky9
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -130,6 +142,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.rocky9
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -141,6 +155,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.almalinux8
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -152,6 +168,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.almalinux8
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -163,6 +181,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.almalinux8
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -174,6 +194,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.centos7
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -185,6 +207,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.centos7
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -196,6 +220,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.centos7
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -207,6 +233,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.debian9
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -222,6 +250,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.debian9
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -237,6 +267,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.debian9
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -252,6 +284,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.debian10
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -267,6 +301,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.debian10
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -282,6 +318,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.debian10
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -297,6 +335,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.ubuntu20
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -312,6 +352,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.ubuntu20
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -327,6 +369,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.ubuntu20
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -342,6 +386,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.oraclelinux7
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -353,6 +399,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.oraclelinux7
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -364,6 +412,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.oraclelinux7
+      args:
+        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
     cap_add:
     - SYS_ADMIN
     volumes:

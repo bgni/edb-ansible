@@ -10,6 +10,7 @@
 #   TESTER_BASE_IMAGE    TESTER_BASE_IMAGE      base image
 #   APT_MIRROR           APT_MIRROR             host[/path] of a Debian mirror
 #   APT_SECURITY_MIRROR  APT_SECURITY_MIRROR    security suite (defaults to APT_MIRROR)
+#   CUSTOM_CA_CERT_BASE64 CUSTOM_CA_CERT_BASE64 base64-encoded root CA PEM
 #   PIP_INDEX            PIP_INDEX_URL          internal PyPI .../simple
 #   PIP_TRUSTED          PIP_TRUSTED_HOST       host to trust behind a private CA
 #   GALAXY_SERVER        ANSIBLE_GALAXY_SERVER  internal Ansible Galaxy
@@ -24,6 +25,16 @@
 # Collection versions are pinned here and must exist on the Galaxy mirror.
 ARG TESTER_BASE_IMAGE=debian:11-slim
 FROM ${TESTER_BASE_IMAGE}
+ARG CUSTOM_CA_CERT_BASE64=""
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    PIP_CERT=/etc/ssl/certs/ca-certificates.crt
+RUN if [ -n "${CUSTOM_CA_CERT_BASE64}" ]; then \
+      printf "%s" "${CUSTOM_CA_CERT_BASE64}" | base64 -d > /usr/local/share/ca-certificates/custom-root-ca.crt; \
+      update-ca-certificates; \
+    fi
+
 
 ARG ansible_core_version
 ARG APT_MIRROR=""

@@ -1,6 +1,15 @@
 # syntax=docker/dockerfile:1
 
 FROM almalinux:8.7
+ARG CUSTOM_CA_CERT_BASE64=""
+ENV SSL_CERT_FILE=/etc/pki/tls/certs/ca-bundle.crt \
+    CURL_CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt \
+    REQUESTS_CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt
+RUN if [ -n "${CUSTOM_CA_CERT_BASE64}" ]; then \
+      printf "%s" "${CUSTOM_CA_CERT_BASE64}" | base64 -d > /etc/pki/ca-trust/source/anchors/custom-root-ca.crt; \
+      update-ca-trust; \
+    fi
+
 RUN (cd /lib/systemd/system/sysinit.target.wants/; for i in *; do [ $i == \
 systemd-tmpfiles-setup.service ] || rm -f $i; done); \
 rm -f /lib/systemd/system/multi-user.target.wants/*;\

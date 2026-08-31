@@ -192,12 +192,15 @@ There are two separate layers, and both need configuring:
 | `YUM_BASEURL` | RPMs inside the database nodes |
 | `YUM_GPGCHECK` | set `0` if the mirror serves unsigned metadata |
 | `APT_MIRROR`, `APT_SECURITY_MIRROR` | Debian packages in the controller |
+| `CUSTOM_CA_CERT_BASE64` | a base64-encoded root CA PEM installed into every test image trust store |
 | `PIP_INDEX_URL`, `PIP_TRUSTED_HOST` | Python packages |
 | `ANSIBLE_GALAXY_SERVER` | the pinned Ansible collections |
 
 When `YUM_BASEURL` is set, every repository the base image ships is disabled
 and that one is used instead — so the mirror must carry the base OS content as
 well as anything the roles install.
+
+If your registry or mirror uses a private root CA, set `CUSTOM_CA_CERT_BASE64` to the base64-encoded PEM before the run, for example `export CUSTOM_CA_CERT_BASE64="$(base64 -w0 /path/to/root-ca.pem)"`. The harness injects it into every built image and refreshes the system trust store so `dnf`, `curl`, Python/pip and other TLS clients trust it.
 
 **Deploying the cluster** — Ansible variables, because the `setup_repo` role
 reads them at deploy time rather than at build time. They go in the case's

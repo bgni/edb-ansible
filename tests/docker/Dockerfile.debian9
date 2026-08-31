@@ -1,6 +1,16 @@
 # syntax=docker/dockerfile:1
 
 FROM jrei/systemd-debian:9
+ARG CUSTOM_CA_CERT_BASE64=""
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    PIP_CERT=/etc/ssl/certs/ca-certificates.crt
+RUN if [ -n "${CUSTOM_CA_CERT_BASE64}" ]; then \
+      printf "%s" "${CUSTOM_CA_CERT_BASE64}" | base64 -d > /usr/local/share/ca-certificates/custom-root-ca.crt; \
+      update-ca-certificates; \
+    fi
+
 
 RUN apt update
 RUN apt install sudo -y

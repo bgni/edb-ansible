@@ -22,6 +22,9 @@
 #       --build-arg pg_version=17 \
 #       -t localhost/edb-ansible/rhel9-pg17:local tests/docker
 #
+# Add `--build-arg CUSTOM_CA_CERT_BASE64="$(base64 -w0 /path/to/root-ca.pem)"`
+# when the mirrored repositories are served behind a private root CA.
+#
 # In an air-gapped environment build it where the mirrors are reachable and
 # push it to your registry, then point PREINSTALLED_IMAGE at it.
 #
@@ -36,6 +39,15 @@
 ARG rhel9_image_tag=9.7
 ARG RHEL_BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-init:${rhel9_image_tag}
 FROM ${RHEL_BASE_IMAGE}
+ARG CUSTOM_CA_CERT_BASE64=""
+ENV SSL_CERT_FILE=/etc/pki/tls/certs/ca-bundle.crt \
+    CURL_CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt \
+    REQUESTS_CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt
+RUN if [ -n "${CUSTOM_CA_CERT_BASE64}" ]; then \
+      printf "%s" "${CUSTOM_CA_CERT_BASE64}" | base64 -d > /etc/pki/ca-trust/source/anchors/custom-root-ca.crt; \
+      update-ca-trust; \
+    fi
+
 
 ARG YUM_BASEURL=""
 ARG YUM_GPGCHECK=1

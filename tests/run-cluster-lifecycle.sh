@@ -36,6 +36,10 @@
 #   --keep                leave the cluster running afterwards
 #   --clean               tear the cluster down and exit
 #
+# For an air-gapped run also set RHEL_BASE_IMAGE, TESTER_BASE_IMAGE,
+# YUM_BASEURL, CUSTOM_CA_CERT_BASE64, PIP_INDEX_URL, APT_MIRROR and
+# ANSIBLE_GALAXY_SERVER before starting the case.
+#
 set -euo pipefail
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
