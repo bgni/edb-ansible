@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
 
 FROM opensuse/leap:latest
-ARG CUSTOM_CA_CERT_BASE64=""
 ENV SSL_CERT_FILE=/etc/ssl/ca-bundle.pem \
     CURL_CA_BUNDLE=/etc/ssl/ca-bundle.pem \
     REQUESTS_CA_BUNDLE=/etc/ssl/ca-bundle.pem
-RUN if [ -n "${CUSTOM_CA_CERT_BASE64}" ]; then \
-      printf "%s" "${CUSTOM_CA_CERT_BASE64}" | base64 -d > /usr/share/pki/trust/anchors/custom-root-ca.crt; \
+RUN --mount=type=secret,id=custom_root_ca,target=/run/secrets/custom-root-ca \
+    if [ -s /run/secrets/custom-root-ca ]; then \
+      cp /run/secrets/custom-root-ca /usr/share/pki/trust/anchors/custom-root-ca.crt; \
       update-ca-certificates; \
     fi
 

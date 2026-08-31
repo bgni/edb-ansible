@@ -7,7 +7,8 @@ services:
       dockerfile: Dockerfile.ansible-tester
       args:
         ansible_core_version: "${ANSIBLE_CORE_VERSION}"
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     environment:
     - EDB_REPO_USERNAME="${EDB_REPO_USERNAME:- }"
     - EDB_REPO_PASSWORD="${EDB_REPO_PASSWORD:- }"
@@ -27,8 +28,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.rocky8
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -41,8 +42,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.rocky8
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -55,8 +56,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.rocky8
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -68,8 +69,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.rocky9
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -81,8 +82,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.rocky9
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -94,8 +95,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.rocky9
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -108,8 +109,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.almalinux8
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -122,8 +123,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.almalinux8
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -136,8 +137,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.almalinux8
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -149,8 +150,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.centos7
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -162,8 +163,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.centos7
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -175,8 +176,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.centos7
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -188,8 +189,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.debian10
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
       - SYS_ADMIN
     volumes:
@@ -205,8 +206,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.debian10
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
       - SYS_ADMIN
     volumes:
@@ -221,8 +222,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.debian10
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
       - SYS_ADMIN
     volumes:
@@ -238,8 +239,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.ubuntu20
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -255,8 +256,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.ubuntu20
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -272,8 +273,8 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.ubuntu20
-      args:
-        CUSTOM_CA_CERT_BASE64: "${CUSTOM_CA_CERT_BASE64:-}"
+      secrets:
+        - custom_root_ca
     cap_add:
     - SYS_ADMIN
     volumes:
@@ -284,3 +285,7 @@ services:
     - /tmp
     - /run/sshd
     - /run/lock
+
+secrets:
+  custom_root_ca:
+    file: ${CUSTOM_CA_CERT_FILE:-/dev/null}

@@ -10,7 +10,7 @@
 #   TESTER_BASE_IMAGE    TESTER_BASE_IMAGE      base image
 #   APT_MIRROR           APT_MIRROR             host[/path] of a Debian mirror
 #   APT_SECURITY_MIRROR  APT_SECURITY_MIRROR    security suite (defaults to APT_MIRROR)
-#   CUSTOM_CA_CERT_BASE64 CUSTOM_CA_CERT_BASE64 base64-encoded root CA PEM
+#   custom_root_ca secret   CUSTOM_CA_CERT_FILE   PEM root CA file for image trust
 #   PIP_INDEX            PIP_INDEX_URL          internal PyPI .../simple
 #   PIP_TRUSTED          PIP_TRUSTED_HOST       host to trust behind a private CA
 #   GALAXY_SERVER        ANSIBLE_GALAXY_SERVER  internal Ansible Galaxy
@@ -27,7 +27,6 @@
 # Debian CA trust store directly.
 ARG TESTER_BASE_IMAGE=debian:11-slim
 FROM ${TESTER_BASE_IMAGE}
-ARG CUSTOM_CA_CERT_BASE64=""
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
     CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
     REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
@@ -85,9 +84,10 @@ RUN apt-get update \
          build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-RUN if [ -n "${CUSTOM_CA_CERT_BASE64}" ]; then \
+RUN --mount=type=secret,id=custom_root_ca,target=/run/secrets/custom-root-ca \
+    if [ -s /run/secrets/custom-root-ca ]; then \
       mkdir -p /usr/local/share/ca-certificates; \
-      printf "%s" "${CUSTOM_CA_CERT_BASE64}" | base64 -d > /usr/local/share/ca-certificates/custom-root-ca.crt; \
+      cp /run/secrets/custom-root-ca /usr/local/share/ca-certificates/custom-root-ca.crt; \
       update-ca-certificates; \
     fi
 

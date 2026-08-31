@@ -39,7 +39,7 @@
 #   ANSIBLE_CORE_VERSION                                (default 2.15)
 #
 # For an air-gapped run also set RHEL_BASE_IMAGE, TESTER_BASE_IMAGE,
-# YUM_BASEURL, CUSTOM_CA_CERT_BASE64, PIP_INDEX_URL, APT_MIRROR and
+# YUM_BASEURL, CUSTOM_CA_CERT_FILE, PIP_INDEX_URL, APT_MIRROR and
 # ANSIBLE_GALAXY_SERVER, and check
 # them first with tests/scripts/check-resources.py.
 #
@@ -53,7 +53,7 @@
 #   docker build -f tests/docker/Dockerfile.rhel9-preinstalled \
 #       --build-arg pg_version=17 -t localhost/edb-ansible/rhel9-pg17:local tests/docker
 #
-# Add `--build-arg CUSTOM_CA_CERT_BASE64="$(base64 -w0 /path/to/root-ca.pem)"`
+# Add `--secret id=custom_root_ca,src=/path/to/root-ca.pem`
 # when the mirror is served behind a private root CA, then point
 # PREINSTALLED_IMAGE at it (defaults to that local tag).
 
